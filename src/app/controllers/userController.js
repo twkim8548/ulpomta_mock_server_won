@@ -88,6 +88,17 @@ exports.signUp = async function (req, res) {
                     `;
             const insertUserInfoParams = [email, hashedPassword];
             await connection.query(insertUserInfoQuery, insertUserInfoParams);
+            
+            await connection.beginTransaction(); // START TRANSACTION
+            //계정 생성 시 기본과목 추가 .서브쿼리 안쓰고하는거 ...해야함   
+            const createSubjectQuery = `
+            INSERT INTO SubjectInfo(userid, name) VALUES 
+            ((select id from UserInfo Where email=?),'영어'),
+            ((select id from UserInfo Where email=?),'수학');
+                `;
+            const createSubjectParams = [email, email];
+            await connection.query(createSubjectQuery, createSubjectParams);
+
 
             await connection.commit(); // COMMIT
             connection.release();
@@ -96,6 +107,9 @@ exports.signUp = async function (req, res) {
                 code: 200,
                 message: "회원가입 성공"
             });
+
+            
+            
         } catch (err) {
             await connection.rollback(); // ROLLBACK
             connection.release();
