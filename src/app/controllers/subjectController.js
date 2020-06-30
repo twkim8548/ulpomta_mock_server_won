@@ -6,7 +6,7 @@ const jwt = require('jsonwebtoken');
 
 //05. 과목 생성
 
-exports.insertCategory = async function (req, res) {
+exports.createSubject = async function (req, res) {
     const id= req.verifiedToken.id;//회원id
     const name = req.body.name;//추가할 과목 이름
 
