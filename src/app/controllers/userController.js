@@ -16,6 +16,7 @@ exports.signUp = async function (req, res) {
     const {
         email, password, nickname, category
     } = req.body;
+ 
 
     if (!email) return res.json({isSuccess: false, code: 301, message: "이메일 형식이 잘못되었습니다."});
     if (!regexEmail.test(email)) return res.json({isSuccess: false, code: 302, message: "이메일 형식이 잘못되었습니다."});
@@ -57,6 +58,8 @@ exports.signUp = async function (req, res) {
                 });
             }
 
+            //노드메일러에서 임시 토큰 받아오는거
+
             //메일 url을 클릭하여 계정 활성화 되면 생성 완료
             //이후 첫 로그인에서 닉네임과 카테고리를 정하는 것 까지 포함
             //일단 nodemailer 빼고 진행. 계정 활성화 여부 반영하는 쿼리로 수정도 할것
@@ -64,7 +67,7 @@ exports.signUp = async function (req, res) {
             // 닉네임 중복 확인
             const selectNicknameQuery = `
                 SELECT email, nickname 
-                FROM UserInfo 
+                FROM userInfo 
                 WHERE nickname = ? ;
                 `;
             const selectNicknameParams = [nickname];
@@ -83,21 +86,21 @@ exports.signUp = async function (req, res) {
             const hashedPassword = await crypto.createHash('sha512').update(password).digest('hex');
 
             const insertUserInfoQuery = `
-                INSERT INTO userInfo(email, pswd)
-                VALUES (?, ?);
+                INSERT INTO userInfo(email, pswd, nickname, category)
+                VALUES (?, ?, ?, ?);
                     `;
-            const insertUserInfoParams = [email, hashedPassword];
+            const insertUserInfoParams = [email, hashedPassword, nickname, category];
             await connection.query(insertUserInfoQuery, insertUserInfoParams);
             
             await connection.beginTransaction(); // START TRANSACTION
             //계정 생성 시 기본과목 추가 .서브쿼리 안쓰고하는거 ...해야함   
-            const createSubjectQuery = `
-            INSERT INTO SubjectInfo(userid, name) VALUES 
-            ((select id from UserInfo Where email=?),'영어'),
-            ((select id from UserInfo Where email=?),'수학');
-                `;
-            const createSubjectParams = [email, email];
-            await connection.query(createSubjectQuery, createSubjectParams);
+            //const createSubjectQuery = `
+            //INSERT INTO subjectInfo(userid, name) VALUES 
+            //((select idx from userInfo Where email=?),'영어'),
+            //((select idx from userInfo Where email=?),'수학');
+            //    `;
+            //const createSubjectParams = [email, email];
+            //await connection.query(createSubjectQuery, createSubjectParams);
 
 
             await connection.commit(); // COMMIT
@@ -140,9 +143,9 @@ exports.signIn = async function (req, res) {
         const connection = await pool.getConnection(async conn => conn);
         try {
             const selectUserInfoQuery = `
-                SELECT id, email , pswd, nickname, status 
-                FROM UserInfo 
-                WHERE email = ? AND status='ACTIVE';
+                SELECT idx, email , pswd, nickname, status 
+                FROM userInfo 
+                WHERE email = ? ;
                 `;
 
             let selectUserInfoParams = [email];
@@ -275,7 +278,7 @@ exports.findemail= async function(req, res){
 
 //04. 비밀번호 재설정
 
-exports.findemail= async function(req, res){
+exports.findpswd= async function(req, res){
     const {
         email, password//재설정할 비밀번호
     } = req.body;
@@ -316,7 +319,7 @@ exports.findemail= async function(req, res){
                 WHERE email = ? AND status='ACTIVE';
             `;
             let resetPswdParams = [password];
-            const [userInfoRows] = await connection.query(resetPswdQuery, resetPswdParams);
+            await connection.query(resetPswdQuery, resetPswdParams);
 
 
 
@@ -340,3 +343,166 @@ exports.findemail= async function(req, res){
     }
 
 };
+
+
+
+
+//회원정보조회
+exports.getUserInfo = async function (req, res) {
+    
+    try {
+        const connection = await pool.getConnection(async conn => conn);
+        try {
+
+            await connection.beginTransaction(); // START TRANSACTION
+
+            const getUserInfoQuery = `
+
+                SELECT email, nickname, message
+                FROM UserInfo   
+                WHERE id = ?;   
+                `    ;
+
+            const getUserInfoParams = [req.verifiedToken.id];
+
+            const[userInfoRows]= await connection.query(getUserInfoQuery, getUserInfoParams);
+
+            await connection.commit(); // COMMIT
+            connection.release();
+            
+            return res.json({
+                id:req.verifiedToken.id,
+                userInfo: userInfoRows[0],
+                isSuccess: true,
+                code: 200,
+                message: "조회에 성공했습니다"
+            });
+        } catch (err) {
+            await connection.rollback(); // ROLLBACK
+            connection.release();
+            logger.error(`App - Get UserInfo Query error\n: ${err.message}`);
+            return res.status(501).send(`Error: ${err.message}`);
+        }
+    } catch (err) {
+        logger.error(`App - Update DB Connection error\n: ${err.message}`);
+        return res.status(502).send(`Error: ${err.message}`);
+    }
+};
+
+
+//회원정보 수정
+exports.updateUserInfo = async function (req, res) {
+    const id= req.verifiedToken.id;
+    const nickname = req.body.nickname;
+    const category = req.body.category;
+    const message = req.body.message;
+
+    if (nickname.length<2) return res.json({isSuccess: false, code: 305, message: "닉네임은 2글자 이상이어야 합니다."});
+    if (nickname.length > 20) return res.json({
+        isSuccess: false,
+        code: 306,
+        message: "닉네임은 60Byte(한글 20글자) 미만이어야 합니다."
+    });
+
+    if (!category) return res.json({isSuccess: false, code: 302, message: "카테고리를 입력 해주세요."});
+
+    if (message.length > 100) return res.json({
+        isSuccess: false,
+        code: 306,
+        message: "메세ㅣ는 100자 이내로 입력해주세요."
+    });
+
+
+    try {
+        const connection = await pool.getConnection(async conn => conn);
+        try {
+
+            // 닉네임 중복 확인
+            const selectNicknameQuery = `
+                SELECT id, email, nickname 
+                FROM UserInfo 
+                WHERE nickname = ?;
+                `;
+            const selectNicknameParams = [nickname];
+            const [nicknameRows] = await connection.query(selectNicknameQuery, selectNicknameParams);
+
+            if (nicknameRows.length > 0) {
+                connection.release();
+                return res.json({
+                    isSuccess: false,
+                    code: 302,
+                    message: "중복된 닉네임입니다."
+                });
+            }
+
+            await connection.beginTransaction(); // START TRANSACTION
+
+            const updateUserInfoQuery = `
+
+                UPDATE UserInfo
+                SET nickname = ?, category=?, message=?
+                WHERE id =? ;
+                    `;
+            const updateUserInfoParams = [nickname, category, message, id];
+            await connection.query(updateUserInfoQuery, updateUserInfoParams);
+
+            await connection.commit(); // COMMIT
+            connection.release();
+            return res.json({
+                isSuccess: true,
+                code: 200,
+                message: "변경이 완료되었습니다"
+            });
+        } catch (err) {
+            await connection.rollback(); // ROLLBACK
+            connection.release();
+            logger.error(`App - Edit nickname Query error\n: ${err.message}`);
+            return res.status(500).send(`Error: ${err.message}`);
+        }
+    } catch (err) {
+        logger.error(`App - Edit nickname DB Connection error\n: ${err.message}`);
+        return res.status(500).send(`Error: ${err.message}`);
+    }
+};
+
+
+//회원탈퇴
+exports.deleteUser = async function (req, res) {
+    const id= req.verifiedToken.id;
+
+    try {
+        const connection = await pool.getConnection(async conn => conn);
+        try {
+
+            await connection.beginTransaction(); // START TRANSACTION
+
+            const updateUserInfoQuery = `
+
+                UPDATE UserInfo
+                SET status = 'DELETED'
+                WHERE id =? ;
+                    `;
+            const updateUserInfoParams = [id];
+            await connection.query(updateUserInfoQuery, updateUserInfoParams);
+
+            await connection.commit(); // COMMIT
+            connection.release();
+            return res.json({
+                isSuccess: true,
+                code: 200,
+                message: "탈퇴가 완료되었습니다"
+            });
+        } catch (err) {
+            await connection.rollback(); // ROLLBACK
+            connection.release();
+            logger.error(`App - Delete user Query error\n: ${err.message}`);
+            return res.status(501).send(`Error: ${err.message}`);
+        }
+    } catch (err) {
+        logger.error(`App - Delete user DB Connection error\n: ${err.message}`);
+        return res.status(502).send(`Error: ${err.message}`);
+    }
+};
+
+
+
