@@ -19,12 +19,12 @@ exports.signUp = async function (req, res) {
  
 
     if (!email) return res.json({isSuccess: false, code: 301, message: "이메일 형식이 잘못되었습니다."});
-    if (!regexEmail.test(email)) return res.json({isSuccess: false, code: 302, message: "이메일 형식이 잘못되었습니다."});
+    if (!regexEmail.test(email)) return res.json({isSuccess: false, code: 301, message: "이메일 형식이 잘못되었습니다."});
 
     if (!password) return res.json({isSuccess: false, code: 303, message: "비밀번호는 6글자 이상이어야 합니다."});
     if (password.length < 6 ) return res.json({
         isSuccess: false,
-        code: 304,
+        code: 303,
         message: "비밀번호는 6글자 이상이어야 합니다."
     });
 
@@ -145,7 +145,7 @@ exports.signIn = async function (req, res) {
             const selectUserInfoQuery = `
                 SELECT idx, email , pswd, nickname, status 
                 FROM userInfo 
-                WHERE email = ? ;
+                WHERE email = ? AND status='ACTIVE';
                 `;
 
             let selectUserInfoParams = [email];
@@ -177,7 +177,7 @@ exports.signIn = async function (req, res) {
 
             //토큰 생성
             let token = await jwt.sign({
-                    id: userInfoRows[0].id,
+                    id: userInfoRows[0].idx,
                     email: email,
                     password: hashedPassword,
                     nickname: userInfoRows[0].nickname,
@@ -224,7 +224,7 @@ exports.check = async function (req, res) {
 
 
 //03. 이메일 찾기
-exports.findemail= async function(req, res){
+exports.findEmail= async function(req, res){
     const {
         nickname
     } = req.body;
@@ -236,8 +236,8 @@ exports.findemail= async function(req, res){
         const connection = await pool.getConnection(async conn => conn);
         try {
             const findEmailQuery = `
-                SELECT email, iscreated
-                FROM UserInfo 
+                SELECT email, createdAt
+                FROM userInfo 
                 WHERE nickname = ? AND status='ACTIVE';
                 `;
 
@@ -278,7 +278,7 @@ exports.findemail= async function(req, res){
 
 //04. 비밀번호 재설정
 
-exports.findpswd= async function(req, res){
+exports.findPswd= async function(req, res){
     const {
         email, password//재설정할 비밀번호
     } = req.body;
@@ -287,13 +287,20 @@ exports.findpswd= async function(req, res){
     if (!email) return res.json({isSuccess: false, code: 301, message: "이메일 형식이 잘못되었습니다."});
     if (!regexEmail.test(email)) return res.json({isSuccess: false, code: 302, message: "이메일 형식이 잘못되었습니다."});
 
+    
+    if (!password) return res.json({isSuccess: false, code: 303, message: "비밀번호는 6글자 이상이어야 합니다."});
+    if (password.length < 6 ) return res.json({
+        isSuccess: false,
+        code: 303,
+        message: "비밀번호는 6글자 이상이어야 합니다."
+    });
 
     try {
         const connection = await pool.getConnection(async conn => conn);
         try {
             const findPswdQuery = `
-                SELECT id, 
-                FROM UserInfo 
+                SELECT idx, email
+                FROM userInfo 
                 WHERE email = ? AND status='ACTIVE';
                 `;
             let findPswdParams = [email];
@@ -309,16 +316,20 @@ exports.findpswd= async function(req, res){
                 });
             }
 
+            
+            const hashedPassword = await crypto.createHash('sha512').update(password).digest('hex');
+
+
             //생성한 토큰 이메일에서 받아온 뒤 입력받은 비밀번호로 재설정
             //순서랑 토큰 헷갈리지 말기...물어볼 것
             //토큰 확인하는거 필요 !!!
 
             const resetPswdQuery = `
-                UPDATE pswd
-                FROM UserInfo 
+                UPDATE userInfo
+                SET pswd=?
                 WHERE email = ? AND status='ACTIVE';
             `;
-            let resetPswdParams = [password];
+            let resetPswdParams = [hashedPassword, email];
             await connection.query(resetPswdQuery, resetPswdParams);
 
 
@@ -349,6 +360,7 @@ exports.findpswd= async function(req, res){
 
 //회원정보조회
 exports.getUserInfo = async function (req, res) {
+    const id= req.verifiedToken.id;
     
     try {
         const connection = await pool.getConnection(async conn => conn);
@@ -359,19 +371,20 @@ exports.getUserInfo = async function (req, res) {
             const getUserInfoQuery = `
 
                 SELECT email, nickname, message
-                FROM UserInfo   
-                WHERE id = ?;   
+                FROM userInfo   
+                WHERE idx = ?;   
                 `    ;
 
-            const getUserInfoParams = [req.verifiedToken.id];
+            const getUserInfoParams = [id];
 
             const[userInfoRows]= await connection.query(getUserInfoQuery, getUserInfoParams);
 
             await connection.commit(); // COMMIT
             connection.release();
+
             
-            return res.json({
-                id:req.verifiedToken.id,
+            
+            res.json({
                 userInfo: userInfoRows[0],
                 isSuccess: true,
                 code: 200,
@@ -393,6 +406,7 @@ exports.getUserInfo = async function (req, res) {
 //회원정보 수정
 exports.updateUserInfo = async function (req, res) {
     const id= req.verifiedToken.id;
+
     const nickname = req.body.nickname;
     const category = req.body.category;
     const message = req.body.message;
@@ -419,8 +433,8 @@ exports.updateUserInfo = async function (req, res) {
 
             // 닉네임 중복 확인
             const selectNicknameQuery = `
-                SELECT id, email, nickname 
-                FROM UserInfo 
+                SELECT idx, email, nickname 
+                FROM userInfo 
                 WHERE nickname = ?;
                 `;
             const selectNicknameParams = [nickname];
@@ -439,9 +453,9 @@ exports.updateUserInfo = async function (req, res) {
 
             const updateUserInfoQuery = `
 
-                UPDATE UserInfo
+                UPDATE userInfo
                 SET nickname = ?, category=?, message=?
-                WHERE id =? ;
+                WHERE idx =? ;
                     `;
             const updateUserInfoParams = [nickname, category, message, id];
             await connection.query(updateUserInfoQuery, updateUserInfoParams);
@@ -478,9 +492,9 @@ exports.deleteUser = async function (req, res) {
 
             const updateUserInfoQuery = `
 
-                UPDATE UserInfo
+                UPDATE userInfo
                 SET status = 'DELETED'
-                WHERE id =? ;
+                WHERE idx =? ;
                     `;
             const updateUserInfoParams = [id];
             await connection.query(updateUserInfoQuery, updateUserInfoParams);

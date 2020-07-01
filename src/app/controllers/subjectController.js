@@ -18,8 +18,8 @@ exports.createSubject = async function (req, res) {
             // 과목명 중복 확인
             const selectSubjectQuery = `
                 SELECT subjectInfo.name 
-                FROM subjectInfo , UserInfo
-                WHERE subjectInfo.name = ? AND UserInfo.id = ? ;
+                FROM subjectInfo , userInfo
+                WHERE subjectInfo.name = ? AND userInfo.idx = ? ;
                 `;
             const selectSubjectParams = [name, id];
             const [SubjectRows] = await connection.query(selectSubjectQuery, selectSubjectParams);
@@ -36,7 +36,7 @@ exports.createSubject = async function (req, res) {
             await connection.beginTransaction(); // START TRANSACTION
 
             const insertSubjectQuery = `
-                INSERT INTO SubjectInfo(userid, name)
+                INSERT INTO subjectInfo(userId, name)
                 VALUES (?,?);
                     `;
             const insertSubjectParams = [id, name];
@@ -79,8 +79,8 @@ exports.updateSubject = async function (req, res) {
             // 과목명 중복 확인
             const selectSubjectQuery = `
                 SELECT subjectInfo.name 
-                FROM subjectInfo , UserInfo
-                WHERE subjectInfo.name = ? AND UserInfo.id = ? ;
+                FROM subjectInfo , userInfo
+                WHERE subjectInfo.name = ? AND userInfo.idx = ? ;
                 `;
             const selectSubjectParams = [name, id];
             const [SubjectRows] = await connection.query(selectSubjectQuery, selectSubjectParams);
@@ -99,7 +99,7 @@ exports.updateSubject = async function (req, res) {
             const updateSubjectQuery = `
                 UPDATE subjectInfo
                 SET name=?
-                where id =? AND userid=?;
+                where idx =? AND userId=?;
                     `;
             const updateSubjectParams = [name, sid, id];
             await connection.query(updateSubjectQuery, updateSubjectParams);
@@ -140,7 +140,7 @@ exports.deleteSubject = async function (req, res) {
 
                 UPDATE subjectInfo
                 SET status = 'DELETED'
-                WHERE id =? AND userid= ?;
+                WHERE idx =? AND userId= ?;
                     `;
             const deleteSubjectParams = [sid, id];
             await connection.query(deleteSubjectQuery, deleteSubjectParams);
@@ -150,7 +150,7 @@ exports.deleteSubject = async function (req, res) {
             return res.json({
                 isSuccess: true,
                 code: 200,
-                message: "카테고리가 삭제되었습니다"
+                message: "과목이 삭제되었습니다"
             });
         } catch (err) {
             await connection.rollback(); // ROLLBACK
