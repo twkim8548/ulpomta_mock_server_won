@@ -8,7 +8,7 @@ const jwt = require('jsonwebtoken');
 
 exports.createSubject = async function (req, res) {
     const id= req.verifiedToken.id;//회원id
-    const name = req.body.name;//추가할 과목 이름
+    const name = req.body.subjectName;//추가할 과목 이름
 
     if (name.length<1) return res.json({isSuccess: false, code: 301, message: "1글자 이상이어야 합니다."});
 
@@ -67,7 +67,7 @@ exports.updateSubject = async function (req, res) {
     const sid = req.params.sid;//변경할 과목 id
     const id= req.verifiedToken.id;
 
-    const name= req.body.name;// 변경할 과목 이름
+    const name= req.body.subjectName;// 변경할 과목 이름
 
 
     if (name.length<1) return res.json({isSuccess: false, code: 301, message: "1글자 이상이어야 합니다."});
