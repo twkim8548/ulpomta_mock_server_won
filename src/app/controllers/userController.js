@@ -189,9 +189,12 @@ exports.signIn = async function (req, res) {
                 } // 유효 시간은 365일
             );
 
+
+
             res.json({
-                userInfo: userInfoRows[0],
-                jwt: token,
+                result:
+                {jwt: token,
+                userInfo: userInfoRows[0]},
                 isSuccess: true,
                 code: 200,
                 message: "로그인 성공"
@@ -253,6 +256,8 @@ exports.findEmail= async function(req, res){
                     message: "일치하는 이메일 계정이 없습니다."
                 });
             }
+            //조회한 이메일에서 @앞 문자열 기준 앞 두글자 제외 다 별표표시
+
 
             //비활성화, 탈퇴여부 관계 없이 없는 계정으로 다룸
 
@@ -275,19 +280,72 @@ exports.findEmail= async function(req, res){
     }
 
 };
+//존재하는 이메일인지 확인->이메일로 재설정 페이지 발송
 
-//04. 비밀번호 재설정
-
-exports.findPswd= async function(req, res){
+exports.checkEmail= async function(req, res){
     const {
-        email, password//재설정할 비밀번호
+        email
     } = req.body;
 
    
     if (!email) return res.json({isSuccess: false, code: 301, message: "이메일 형식이 잘못되었습니다."});
     if (!regexEmail.test(email)) return res.json({isSuccess: false, code: 302, message: "이메일 형식이 잘못되었습니다."});
 
-    
+    try {
+        const connection = await pool.getConnection(async conn => conn);
+        try {
+            const checkEmailQuery = `
+                SELECT idx, email
+                FROM userInfo 
+                WHERE email = ? AND status='ACTIVE';
+                `;
+            let checkEmailParams = [email];
+
+            const [userInfoRows] = await connection.query(checkEmailQuery, checkEmailParams);
+
+            if (userInfoRows.length < 1) {
+                connection.release();
+                return res.json({
+                    isSuccess: false,
+                    code: 310,
+                    message: "일치하는 이메일 계정이 없습니다."
+                });
+            }
+            //이메일에 재설정 링크 쏘기
+
+        
+
+            //비활성화, 탈퇴여부 관계 없이 없는 계정으로 다룸
+
+            res.json({
+                isSuccess: true,
+                code: 200,
+                message: "비밀번호 재설정 성공"
+            });
+
+            connection.release();
+        } catch (err) {
+            logger.error(`App - checkEmail Query error\n: ${JSON.stringify(err)}`);
+            connection.release();
+            return res.status(501).send(`Error: ${err.message}`);
+        }
+    } catch (err) {
+        logger.error(`App - checkEmail DB Connection error\n: ${JSON.stringify(err)}`);
+        return res.status(502).send(`Error: ${err.message}`);
+    }
+
+};
+
+
+
+//04. 비밀번호 재설정
+
+exports.updatePswd= async function(req, res){
+    const id = req.verifiedToken.id;//재설정 링크에서 토큰 확인 ??
+    const {
+        password//재설정 링크에서 받아온 비밀번호
+    } = req.body;
+
     if (!password) return res.json({isSuccess: false, code: 303, message: "비밀번호는 6글자 이상이어야 합니다."});
     if (password.length < 6 ) return res.json({
         isSuccess: false,
@@ -298,39 +356,16 @@ exports.findPswd= async function(req, res){
     try {
         const connection = await pool.getConnection(async conn => conn);
         try {
-            const findPswdQuery = `
-                SELECT idx, email
-                FROM userInfo 
-                WHERE email = ? AND status='ACTIVE';
-                `;
-            let findPswdParams = [email];
-
-            const [userInfoRows] = await connection.query(findPswdQuery, findPswdParams);
-
-            if (userInfoRows.length < 1) {
-                connection.release();
-                return res.json({
-                    isSuccess: false,
-                    code: 310,
-                    message: "일치하는 이메일 계정이 없습니다."
-                });
-            }
-
             
             const hashedPassword = await crypto.createHash('sha512').update(password).digest('hex');
 
-
-            //생성한 토큰 이메일에서 받아온 뒤 입력받은 비밀번호로 재설정
-            //순서랑 토큰 헷갈리지 말기...물어볼 것
-            //토큰 확인하는거 필요 !!!
-
-            const resetPswdQuery = `
+            const updatePswdQuery = `
                 UPDATE userInfo
                 SET pswd=?
-                WHERE email = ? AND status='ACTIVE';
+                WHERE idx = ? AND status='ACTIVE';
             `;
-            let resetPswdParams = [hashedPassword, email];
-            await connection.query(resetPswdQuery, resetPswdParams);
+            let updatePswdParams = [hashedPassword,id];
+            await connection.query(updatePswdQuery, updatePswdParams);
 
 
 
@@ -344,21 +379,17 @@ exports.findPswd= async function(req, res){
 
             connection.release();
         } catch (err) {
-            logger.error(`App - findPswd Query error\n: ${JSON.stringify(err)}`);
+            logger.error(`App - updatePswd Query error\n: ${JSON.stringify(err)}`);
             connection.release();
             return res.status(501).send(`Error: ${err.message}`);
         }
     } catch (err) {
-        logger.error(`App - findPswd DB Connection error\n: ${JSON.stringify(err)}`);
+        logger.error(`App - updatePswd DB Connection error\n: ${JSON.stringify(err)}`);
         return res.status(502).send(`Error: ${err.message}`);
     }
 
 };
-
-
-
-
-//회원정보조회
+//회원정보 조회
 exports.getUserInfo = async function (req, res) {
     const id= req.verifiedToken.id;
     
