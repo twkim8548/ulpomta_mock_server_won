@@ -97,7 +97,7 @@ exports.getRestTimeCheck = async function (req, res) {
             const getRestTimeQuery = `    
                 select sec_to_time(sum(timestampdiff(second, startedAt,CURRENT_TIMESTAMP)))
                 from timeCheck
-                where  idx=(SELECT MAX(idx) FROM timeCheck WHERE userId = ?);
+                where idx=(SELECT MAX(idx) FROM timeCheck WHERE userId = ?);
                 `    ;
 
             const getRestTimeParams = [id];
@@ -125,5 +125,107 @@ exports.getRestTimeCheck = async function (req, res) {
     }
 };
 //17. 시간 측정 시작
+
+exports.startTimeCheck = async function (req, res) {
+    const id= req.verifiedToken.id;
+    const {
+        subjectName, restName
+    } = req.body;
+    
+    
+    try {
+        const connection = await pool.getConnection(async conn => conn);
+        try {
+            const finishRestTimeQuery = `    
+                SELECT @last_id := MAX(idx) FROM timeCheck;
+
+                update timeCheck
+                set finishedAt=current_timestamp(), timeDetail=?
+                where userId=? and idx=@last_id and timeType=0 and date=curdate();
+                `    ;
+
+            const finishRestTimeParams = [restName, id];
+            const[timeCheckRows]= await connection.query(finishRestTimeQuery,finishRestTimeParams);
+
+            await connection.beginTransaction(); // START TRANSACTION
+
+            const startStudyTimeQuery = `    
+                insert timeCheck(userID, date, timeType, timeDetail) values 
+                (?, curdate(), 1, ?);
+                `    ;
+
+            const startStudyTimeParams = [id, subjectName];
+            const[timeCheckRows]= await connection.query(startStudyTimeQuery,startStudyTimeParams);
+
+
+            await connection.commit(); // COMMIT
+            connection.release();
+
+            res.json({
+                isSuccess: true,
+                code: 200,
+                message: "시간측정에 성공했습니다"
+            });
+        } catch (err) {
+            await connection.rollback(); // ROLLBACK
+            connection.release();
+            logger.error(`App - Finish Time Check Query error\n: ${err.message}`);
+            return res.status(501).send(`Error: ${err.message}`);
+        }
+    } catch (err) {
+        logger.error(`App - Finish Time Check DB Connection error\n: ${err.message}`);
+        return res.status(502).send(`Error: ${err.message}`);
+    }
+};
+
+
 //18. 시간 측정 종료
+exports.finishTimeCheck = async function (req, res) {
+    const id= req.verifiedToken.id;
+
+    try {
+        const connection = await pool.getConnection(async conn => conn);
+        try {
+            const finishStudyTimeQuery = `    
+
+                SELECT @last_id := MAX(idx) FROM timeCheck;
+
+                update timeCheck
+                set finishedAt=current_timestamp()
+                where userId=? and idx=@last_id and timeType=1;
+                `    ;
+
+            const finishStudyTimeParams = [id];
+            await connection.query(finishStudyTimeQuery,finishStudyTimeParams);
+
+            await connection.beginTransaction(); // START TRANSACTION
+
+            const startRestTimeQuery = `    
+                insert timeCheck(userID, date, timeType) values 
+                (?, curdate(), 1);
+                `    ;
+
+            const startRestTimeParams = [id];
+            await connection.query(startRestTimeQuery,startRestTimeParams);
+
+
+            await connection.commit(); // COMMIT
+            connection.release();
+
+            res.json({
+                isSuccess: true,
+                code: 200,
+                message: "측정 종료에 성공했습니다"
+            });
+        } catch (err) {
+            await connection.rollback(); // ROLLBACK
+            connection.release();
+            logger.error(`App - Finish Time Check Query error\n: ${err.message}`);
+            return res.status(501).send(`Error: ${err.message}`);
+        }
+    } catch (err) {
+        logger.error(`App - Finish Time Check DB Connection error\n: ${err.message}`);
+        return res.status(502).send(`Error: ${err.message}`);
+    }
+};
 //19. 시간 측정 페이지
