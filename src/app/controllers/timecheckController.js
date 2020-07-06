@@ -5,46 +5,45 @@ const {logger} = require('../../../config/winston');
 const jwt = require('jsonwebtoken');
 
 
-// //14. 과목별 공부시간, todo조회
+//14. 과목별 공부시간 조회
 
-// exports.getSubTimeCheck = async function (req, res) {
-//     const id= req.verifiedToken.id;
+exports.getSubTimeCheck = async function (req, res) {
+    const id= req.verifiedToken.id;
     
-//     try {
-//         const connection = await pool.getConnection(async conn => conn);
-//         try {
-//             const getSubTimeQuery = `
+    try {
+        const connection = await pool.getConnection(async conn => conn);
+        try {
+            const getSubTimeQuery = `
+            select timeDetail, sec_to_time(sum(timediff( finishedAt, startedAt))) as subjectTime
+            from timeCheck
+            where userId=? and timeType=1 and date=curdate() and status='ACTIVE'
+            group by timeDetail;
+                `    ;
 
-//                 select timedetail, sec_to_time(sum(timestampdiff(second, startedAt, finishedAt)))
-//                 from timeCheck
-//                 where userId=? and date=curdate() and status='ACTIVE'
-//                 group by timedetail;   
-//                 `    ;
+            const getSubTimeParams = [id];
 
-//             const getSubTimeParams = [id];
+            const[timeCheckRows]= await connection.query(getSubTimeQuery,getSubTimeParams);
 
-//             const[timeCheckRows]= await connection.query(getSubTimeQuery,getSubTimeParams);
+            await connection.commit(); // COMMIT
+            connection.release();
 
-//             await connection.commit(); // COMMIT
-//             connection.release();
-
-//             res.json({
-//                 userInfo: timeCheckRows[0],
-//                 isSuccess: true,
-//                 code: 200,
-//                 message: "조회에 성공했습니다"
-//             });
-//         } catch (err) {
-//             await connection.rollback(); // ROLLBACK
-//             connection.release();
-//             logger.error(`App - Get SubTime Query error\n: ${err.message}`);
-//             return res.status(501).send(`Error: ${err.message}`);
-//         }
-//     } catch (err) {
-//         logger.error(`App - Get SubTime DB Connection error\n: ${err.message}`);
-//         return res.status(502).send(`Error: ${err.message}`);
-//     }
-// };
+            res.json({
+                subjectTimeInfo: timeCheckRows,
+                isSuccess: true,
+                code: 200,
+                message: "조회에 성공했습니다"
+            });
+        } catch (err) {
+            await connection.rollback(); // ROLLBACK
+            connection.release();
+            logger.error(`App - Get SubTime Query error\n: ${err.message}`);
+            return res.status(501).send(`Error: ${err.message}`);
+        }
+    } catch (err) {
+        logger.error(`App - Get SubTime DB Connection error\n: ${err.message}`);
+        return res.status(502).send(`Error: ${err.message}`);
+    }
+};
 
 
 //15. 오늘의 총 공부시간
@@ -56,9 +55,9 @@ exports.getDailyTimeCheck = async function (req, res) {
         const connection = await pool.getConnection(async conn => conn);
         try {
             const getDailyTimeQuery = `    
-                select sec_to_time(sum(timestampdiff(second, startedAt, finishedAt)))
-                from timeCheck
-                where userId=? and date=curdate() and timetype='study' and status='ACTIVE';
+            select date(curdate()) as 날짜 , sec_to_time(sum(timestampdiff(second, startedAt, finishedAt))) as 공부시간
+            from timeCheck
+            where userId=? and date=curdate() and timetype=1 and status='ACTIVE'
                 `    ;
 
             const getDailyTimeParams = [id];
@@ -69,7 +68,7 @@ exports.getDailyTimeCheck = async function (req, res) {
             connection.release();
 
             res.json({
-                userInfo: timeCheckRows[0],
+                timeInfo: timeCheckRows[0],
                 isSuccess: true,
                 code: 200,
                 message: "조회에 성공했습니다"
@@ -224,6 +223,7 @@ exports.startTimeCheck2 = async function (req, res) {
 //18. 시간 측정 종료
 exports.finishTimeCheck = async function (req, res) {
     const id= req.verifiedToken.id;
+    const sid= req.query.sid;
 
     try {
         const connection = await pool.getConnection(async conn => conn);
@@ -232,10 +232,13 @@ exports.finishTimeCheck = async function (req, res) {
 
                 update timeCheck
                 set finishedAt=current_timestamp()
-                where userId=? and timeType=1 and date=curdate() and startedAt is not null and finishedAt is NULL;
+                where userId=? and timeType=1 and date=curdate() and timeDetail=
+                    (select name
+					from subjectInfo
+					where userId=? and idx=?);
                 `    ;
 
-            const finishStudyTimeParams = [id];
+            const finishStudyTimeParams = [id, id, sid];
             await connection.query(finishStudyTimeQuery,finishStudyTimeParams);
 
             await connection.beginTransaction(); // START TRANSACTION
@@ -274,7 +277,7 @@ exports.finishTimeCheck = async function (req, res) {
 
 exports.getTimeCheck = async function (req, res) {
     const id= req.verifiedToken.id;
-    const sid= req.params.sid;
+    const sid= req.query.sid;
 
     try {
         const connection = await pool.getConnection(async conn => conn);
