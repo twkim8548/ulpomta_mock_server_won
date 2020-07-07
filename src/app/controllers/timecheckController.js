@@ -9,120 +9,76 @@ const jwt = require('jsonwebtoken');
 
 exports.getSubTimeCheck = async function (req, res) {
     const id= req.verifiedToken.id;
+    const year= req.query.year;
+    const month= req.query.month;
+    const day= req.query.day;
     
     try {
         const connection = await pool.getConnection(async conn => conn);
         try {
-            const getSubTimeQuery = `
-            select timeDetail, sec_to_time(sum(timediff( finishedAt, startedAt))) as subjectTime
+
+            const status1Query = `    
+
+            select sec_to_time(sum(timestampdiff(second, startedAt, finishedAt))) as total 
             from timeCheck
-            where userId=? and timeType=1 and date=curdate() and status='ACTIVE'
-            group by timeDetail;
-                `    ;
+            where userId=?  and  year(date)=? and month(date)=? and day(date)=?
+            limit 1;
+                         `    ;
 
-            const getSubTimeParams = [id];
+            const statusParams = [id,year, month, day];
+            const [status1Rows]=await connection.query(status1Query,statusParams);
 
-            const[timeCheckRows]= await connection.query(getSubTimeQuery,getSubTimeParams);
-
-            await connection.commit(); // COMMIT
-            connection.release();
-
-            res.json({
-                subjectTimeInfo: timeCheckRows,
-                isSuccess: true,
-                code: 200,
-                message: "조회에 성공했습니다"
-            });
-        } catch (err) {
-            await connection.rollback(); // ROLLBACK
-            connection.release();
-            logger.error(`App - Get SubTime Query error\n: ${err.message}`);
-            return res.status(501).send(`Error: ${err.message}`);
-        }
-    } catch (err) {
-        logger.error(`App - Get SubTime DB Connection error\n: ${err.message}`);
-        return res.status(502).send(`Error: ${err.message}`);
-    }
-};
-
-
-//15. 오늘의 총 공부시간
-
-exports.getDailyTimeCheck = async function (req, res) {
-    const id= req.verifiedToken.id;
-    
-    try {
-        const connection = await pool.getConnection(async conn => conn);
-        try {
-            const getDailyTimeQuery = `    
-            select date(curdate()) as 날짜 , sec_to_time(sum(timestampdiff(second, startedAt, finishedAt))) as 공부시간
+            const status2Query = `   
+            
+            select timeDetail as subject, 
+                ifnull( sec_to_time(sum(timestampdiff(second, startedAt,
+                 finishedAt))),'00:00:00') as time
             from timeCheck
-            where userId=? and date=curdate() and timetype=1 and status='ACTIVE'
-                `    ;
+            where userId=?  and  year(date)=? and month(date)=? and day(date)=? and timeType =1
+            group by timeDetail
+            order by timeDetail;
 
-            const getDailyTimeParams = [id];
+                         `    ;
 
-            const[timeCheckRows]= await connection.query(getDailyTimeQuery,getDailyTimeParams);
+      
+            const [status2Rows]=await connection.query(status2Query,statusParams);
+
+
+            const stat2_1={};
+
+            for(var i= 0; i<status2Rows.length;i++){
+                var newSubject = status2Rows[i].subject;
+                var newTime = status2Rows[i].time;
+                stat2_1[newSubject]=newTime; 
+            }
 
             await connection.commit(); // COMMIT
             connection.release();
 
-            res.json({
-                timeInfo: timeCheckRows[0],
-                isSuccess: true,
-                code: 200,
-                message: "조회에 성공했습니다"
-            });
-        } catch (err) {
-            await connection.rollback(); // ROLLBACK
-            connection.release();
-            logger.error(`App - Get Daily Time Query error\n: ${err.message}`);
-            return res.status(501).send(`Error: ${err.message}`);
-        }
-    } catch (err) {
-        logger.error(`App - Get Daily Time DB Connection error\n: ${err.message}`);
-        return res.status(502).send(`Error: ${err.message}`);
-    }
-};
-
-//16. 마지막 공부 이후 휴식시간
-
-exports.getRestTimeCheck = async function (req, res) {
-    const id= req.verifiedToken.id;
     
-    try {
-        const connection = await pool.getConnection(async conn => conn);
-        try {
-            const getRestTimeQuery = `    
-                select TIME_FORMAT(sec_to_time(sum(timestampdiff(second, startedAt,CURRENT_TIMESTAMP))), '%H 시간 %i 분 %s 초') as 휴식
-                from timeCheck
-                where idx=(SELECT MAX(idx) FROM timeCheck WHERE userId = ?);
-                `    ;
-
-            const getRestTimeParams = [id];
-
-            const[timeCheckRows]= await connection.query(getRestTimeQuery,getRestTimeParams);
-
-            await connection.commit(); // COMMIT
-            connection.release();
 
             res.json({
-                timeInfo: timeCheckRows[0],
+                timeInfo: status1Rows[0],
+                subjectTime:stat2_1,
                 isSuccess: true,
                 code: 200,
-                message: "조회에 성공했습니다"
+                message: "홈 화면 조회 성공"
             });
+
         } catch (err) {
             await connection.rollback(); // ROLLBACK
             connection.release();
-            logger.error(`App - Get Rest Time Query error\n: ${err.message}`);
+            logger.error(`App - Get Home Info Query error\n: ${err.message}`);
             return res.status(501).send(`Error: ${err.message}`);
         }
     } catch (err) {
-        logger.error(`App - Get Rest Time DB Connection error\n: ${err.message}`);
+        logger.error(`App - Get Home Info DB Connection error\n: ${err.message}`);
         return res.status(502).send(`Error: ${err.message}`);
     }
 };
+
+
+
 
 //17. 시간 측정 시작
 
@@ -273,7 +229,7 @@ exports.finishTimeCheck = async function (req, res) {
     }
 };
 //19. 시간 측정 페이지
-//총공부시간, 과목공부시간, 현재집중시간
+//총공부시간, 과목공부시간, 현재집중시간, 공부하는 멤버
 
 exports.getTimeCheck = async function (req, res) {
     const id= req.verifiedToken.id;
@@ -329,3 +285,287 @@ exports.getTimeCheck = async function (req, res) {
         return res.status(502).send(`Error: ${err.message}`);
     }
 };
+
+
+
+//21.일간 통계
+//날짜. 총공부시간/ 최대집중시간/ 시작시간/ 종료시간
+//과목별 공부량: 과목/ 시간/ 비율
+//공부 휴식비율:공부. 휴식. 그외 /시간/ 비율
+//타임라인 로그
+
+exports.getDailyStatus = async function (req, res) {
+    const id= req.verifiedToken.id;
+    const year= req.query.year;
+    const month= req.query.month;
+    const day= req.query.day;
+
+    try {
+        const connection = await pool.getConnection(async conn => conn);
+        try {
+            const status1Query = `    
+
+            select hour(sec_to_time(sum(timestampdiff( second, startedAt, finishedAt)))) as sect,
+            sec_to_time(sum(timestampdiff(second, startedAt, finishedAt))) as total ,
+            sec_to_time(max(timestampdiff(second, startedAt, finishedAt))) as max,
+            time((min(startedAt))) as start,
+            time((max(finishedAt))) as finish
+            from timeCheck
+            where userId=?  and  year(date)=? and month(date)=? and day(date)=?
+            limit 1;
+                         `    ;
+
+            const statusParams = [id,year, month, day];
+            const [status1Rows]=await connection.query(status1Query,statusParams);
+
+            const statusParams2=[year, month, day,id,year, month, day];
+
+
+            const status2Query = `    
+
+            #과목별 공부량: 과목/ 시간/ 비율
+            select timeDetail as subject, 
+                sec_to_time(sum(timestampdiff(second, startedAt, finishedAt))) as time,
+                concat(round(  sum(timestampdiff(second, startedAt, finishedAt) )/ 
+                (select sum(timestampdiff(second, startedAt, finishedAt))
+	            from timeCheck where year(date)=? and month(date)=? and day(date)=? and timeType =1)  *100),"%") as rate
+            from timeCheck
+            where userId=?  and  year(date)=? and month(date)=? and day(date)=? and timeType =1
+            group by timeDetail;
+                         `    ;
+
+      
+            const [status2Rows]=await connection.query(status2Query,statusParams2);
+
+
+            const stat2_1={};
+
+            for(var i= 0; i<status2Rows.length;i++){
+                var newSubject = status2Rows[i].subject;
+                var newTime = status2Rows[i].time;
+                stat2_1[newSubject]=newTime; 
+            }
+
+            const stat2_2={};
+
+            for(var i= 0; i<status2Rows.length;i++){
+                var newSubject = status2Rows[i].subject;
+                var newRate = status2Rows[i].rate;
+                stat2_2[newSubject]=newRate; 
+            }
+
+
+
+            const status3Query = `    
+
+
+            select (case when timeType=1 then '공부'
+                when timeType=0 and timeDetail is not null then '휴식'
+                when timeType=0 and timeDetail is null then '그외' end) as timeType1, 
+                sec_to_time (sum(timestampdiff(second, startedAt, finishedAt)) )as time,
+                concat(round(  sum(timestampdiff(second, startedAt, finishedAt) )/ 
+                (select sum(timestampdiff(second, startedAt, finishedAt))
+                from timeCheck  where year(date)=? and month(date)=? and day(date)=?)  *100),"%") as rate
+            from timeCheck
+            where userId=?  and year(date)=? and month(date)=? and day(date)=?
+            group by timeType1;
+                         `    ;
+
+            const [status3Rows]=await connection.query(status3Query,statusParams2);
+
+            const stat3_1={};
+
+            for(var i= 0; i<status3Rows.length;i++){
+                var newtimeType = status3Rows[i].timeType1;
+                var newTime = status3Rows[i].time;
+                stat3_1[newtimeType]=newTime; 
+            }
+
+            const stat3_2={};
+
+            for(var i= 0; i<status3Rows.length;i++){
+                var newtimeType = status3Rows[i].timeType1;
+                var newRate = status3Rows[i].rate;
+                stat3_2[newtimeType]=newRate; 
+            }
+    
+            await connection.commit(); // COMMIT
+            connection.release();
+
+            
+            res.json({
+                result:{//jwt: status2Rows,
+                timeInfo: status1Rows[0],
+                subjectTime:stat2_1,
+                subjectRate:stat2_2,
+                timeTypeTume:stat3_1,
+                timeTypeRate:stat3_2},
+                
+                isSuccess: true,
+                code: 200,
+                message: "일간 통계 조회 성공"
+            });
+
+        } catch (err) {
+            await connection.rollback(); // ROLLBACK
+            connection.release();
+            logger.error(`App - get Time Check Query error\n: ${err.message}`);
+            return res.status(501).send(`Error: ${err.message}`);
+        }
+    } catch (err) {
+        logger.error(`App - get Time Check DB Connection error\n: ${err.message}`);
+        return res.status(502).send(`Error: ${err.message}`);
+    }
+};
+
+
+
+
+//21.일간 통계
+//날짜. 총공부시간/ 최대집중시간/ 시작시간/ 종료시간
+//과목별 공부량: 과목/ 시간/ 비율
+//공부 휴식비율:공부. 휴식. 그외 /시간/ 비율
+//타임라인 로그
+
+exports.getDailyTime = async function (req, res) {
+    const id= req.verifiedToken.id;
+    const year= req.query.year;
+    const month= req.query.month;
+    const day= req.query.day;
+
+    try {
+        const connection = await pool.getConnection(async conn => conn);
+        try {
+            const status1Query = `    
+
+            select hour(sec_to_time(sum(timestampdiff( second, startedAt, finishedAt)))) as sect,
+            sec_to_time(sum(timestampdiff(second, startedAt, finishedAt))) as total ,
+            sec_to_time(max(timestampdiff(second, startedAt, finishedAt))) as max,
+            time((min(startedAt))) as start,
+            time((max(finishedAt))) as finish
+            from timeCheck
+            where userId=?  and  year(date)=? and month(date)=? and day(date)=?
+            limit 1;
+                         `    ;
+
+            const statusParams = [id,year, month, day];
+            const [status1Rows]=await connection.query(status1Query,statusParams);
+
+    
+            await connection.commit(); // COMMIT
+            connection.release();
+
+            
+            res.json({
+                timeInfo: status1Rows[0],
+                isSuccess: true,
+                code: 200,
+                message: "일간 시간 조회 성공"
+            });
+
+        } catch (err) {
+            await connection.rollback(); // ROLLBACK
+            connection.release();
+            logger.error(`App - get Time Check Query error\n: ${err.message}`);
+            return res.status(501).send(`Error: ${err.message}`);
+        }
+    } catch (err) {
+        logger.error(`App - get Time Check DB Connection error\n: ${err.message}`);
+        return res.status(502).send(`Error: ${err.message}`);
+    }
+};
+
+
+exports.getWeeklyTime = async function (req, res) {
+    const id= req.verifiedToken.id;
+    const y= req.query.year;
+    const m= req.query.month;
+    //const d= req.query.day;
+
+    try {
+        const connection = await pool.getConnection(async conn => conn);
+        try {
+            const status1Query = `    
+
+            select 
+            sec_to_time(sum(timestampdiff(second, startedAt, finishedAt))) as total ,
+            sec_to_time(round(sum(timestampdiff(second, startedAt, finishedAt))/7)) as avg
+            from timeCheck
+            where userId=?  and year(date)=? and month(date)=?
+            limit 1;
+                         `    ;
+
+            const statusParams = [id,y, m];
+            const [status1Rows]=await connection.query(status1Query,statusParams);
+
+    
+            await connection.commit(); // COMMIT
+            connection.release();
+
+            
+            res.json({
+                timeInfo: status1Rows[0],
+                isSuccess: true,
+                code: 200,
+                message: "주간 시간 조회 성공"
+            });
+
+        } catch (err) {
+            await connection.rollback(); // ROLLBACK
+            connection.release();
+            logger.error(`App - get Time Check Query error\n: ${err.message}`);
+            return res.status(501).send(`Error: ${err.message}`);
+        }
+    } catch (err) {
+        logger.error(`App - get Time Check DB Connection error\n: ${err.message}`);
+        return res.status(502).send(`Error: ${err.message}`);
+    }
+};
+
+
+exports.getMonthlyTime = async function (req, res) {
+    const id= req.verifiedToken.id;
+    const y= req.query.year;
+    const m= req.query.month;
+    //const d= req.query.day;
+
+    try {
+        const connection = await pool.getConnection(async conn => conn);
+        try {
+            const status1Query = `    
+
+            select 
+            sec_to_time(sum(timestampdiff(second, startedAt, finishedAt))) as total ,
+            sec_to_time(round(sum(timestampdiff(second, startedAt, finishedAt))/31)) as avg
+            from timeCheck
+            where userId=?  and year(date)=? and month(date)=?
+            limit 1;
+                         `    ;
+
+            const statusParams = [id,y, m];
+            const [status1Rows]=await connection.query(status1Query,statusParams);
+
+    
+            await connection.commit(); // COMMIT
+            connection.release();
+
+            
+            res.json({
+                timeInfo: status1Rows[0],
+                isSuccess: true,
+                code: 200,
+                message: "월간 시간 조회 성공"
+            });
+
+        } catch (err) {
+            await connection.rollback(); // ROLLBACK
+            connection.release();
+            logger.error(`App - get Time Check Query error\n: ${err.message}`);
+            return res.status(501).send(`Error: ${err.message}`);
+        }
+    } catch (err) {
+        logger.error(`App - get Time Check DB Connection error\n: ${err.message}`);
+        return res.status(502).send(`Error: ${err.message}`);
+    }
+};
+
