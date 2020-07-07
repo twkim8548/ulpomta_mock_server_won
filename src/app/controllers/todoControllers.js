@@ -4,65 +4,7 @@ const {logger} = require('../../../config/winston');
 
 const jwt = require('jsonwebtoken');
 
-//과목조회
-exports.getSubject = async function (req, res) {
-    const id= req.verifiedToken.id;
-    
-    try {
-        const connection = await pool.getConnection(async conn => conn);
-        try {
-
-            await connection.beginTransaction(); // START TRANSACTION
-
-            const getSubjectInfoQuery = `
-
-                SELECT idx, name
-                FROM subjectInfo  
-                WHERE userId = ? and status='ACTIVE';   
-                `    ;
-
-            const getSubjectInfoParams = [id];
-
-            const[subjectInfoRows]= await connection.query(getSubjectInfoQuery, getSubjectInfoParams);
-
-            await connection.commit(); // COMMIT
-            connection.release();
-
-
-            const stat2_1={};
-
-            for(var i= 0; i<subjectInfoRows.length;i++){
-                var newId = subjectInfoRows[i].idx;
-                var newname = subjectInfoRows[i].name;
-                stat2_1[newId]=newname; 
-            }
-
-            await connection.commit(); // COMMIT
-            connection.release();
-
-    
-
-            res.json({
-                subjectInfo:stat2_1,
-                isSuccess: true,
-                code: 200,
-                message: "과목 조회 성공"
-            });
-            
-        } catch (err) {
-            await connection.rollback(); // ROLLBACK
-            connection.release();
-            logger.error(`App - Get UserInfo Query error\n: ${err.message}`);
-            return res.status(501).send(`Error: ${err.message}`);
-        }
-    } catch (err) {
-        logger.error(`App - Update DB Connection error\n: ${err.message}`);
-        return res.status(502).send(`Error: ${err.message}`);
-    }
-};
-
-
-//05. 과목 생성
+//08. todo 생성
 
 exports.createSubject = async function (req, res) {
     const id= req.verifiedToken.id;//회원id
@@ -73,7 +15,7 @@ exports.createSubject = async function (req, res) {
     try {
         const connection = await pool.getConnection(async conn => conn);
         try {            
-            // 과목명 중복 확인
+            // todo도 중복 확인함 !! 근데 진행사항 체크 되어있어야 알림창이 뜨고 진행사항없으면 그냥 무시하는듯 ...
             const selectSubjectQuery = `
                 SELECT subjectInfo.name 
                 FROM subjectInfo , userInfo
@@ -119,10 +61,14 @@ exports.createSubject = async function (req, res) {
     }
 };
 
-//06. 과목 수정
+//09. todo 진행상황 체크
+//10. todo 진행상황 조회
+//11. todo 수정
+
+
 exports.updateSubject = async function (req, res) {
 
-    const sid = req.params.subjectId;//변경할 과목 id
+    const sid = req.params.sid;//변경할 과목 id
     const id= req.verifiedToken.id;
 
     const name= req.body.subjectName;// 변경할 과목 이름
@@ -181,11 +127,14 @@ exports.updateSubject = async function (req, res) {
         return res.status(502).send(`Error: ${err.message}`);
     }
 };
+//12. todo 날짜별 조회
+//13. todo 날짜별 조회(한달)
+
 
 //07. 과목 삭제
 
 exports.deleteSubject = async function (req, res) {
-    const sid = req.params.subjectId;//변경할 과목 id
+    const sid = req.params.sid;//변경할 과목 id
     const id= req.verifiedToken.id;
 
     try {
@@ -213,11 +162,11 @@ exports.deleteSubject = async function (req, res) {
         } catch (err) {
             await connection.rollback(); // ROLLBACK
             connection.release();
-            logger.error(`App - Delete Subject Query error\n: ${err.message}`);
+            //logger.error(`App - Delete Catogory Query error\n: ${err.message}`);
             return res.status(501).send(`Error: ${err.message}`);
         }
     } catch (err) {
-        logger.error(`App - Delete Subject DB Connection error\n: ${err.message}`);
+       // logger.error(`App - Delete Catogory DB Connection error\n: ${err.message}`);
         return res.status(502).send(`Error: ${err.message}`);
     }
 };

@@ -442,19 +442,19 @@ exports.updateUserInfo = async function (req, res) {
     const category = req.body.category;
     const message = req.body.message;
 
-    if (nickname.length<2) return res.json({isSuccess: false, code: 305, message: "닉네임은 2글자 이상이어야 합니다."});
+    if (nickname.length<2) return res.json({isSuccess: false, code: 301, message: "닉네임은 2글자 이상이어야 합니다."});
     if (nickname.length > 20) return res.json({
         isSuccess: false,
-        code: 306,
+        code: 302,
         message: "닉네임은 60Byte(한글 20글자) 미만이어야 합니다."
     });
 
-    if (!category) return res.json({isSuccess: false, code: 302, message: "카테고리를 입력 해주세요."});
+    if (!category) return res.json({isSuccess: false, code: 303, message: "카테고리를 입력 해주세요."});
 
     if (message.length > 100) return res.json({
         isSuccess: false,
-        code: 306,
-        message: "메세ㅣ는 100자 이내로 입력해주세요."
+        code: 304,
+        message: "메세지는 100자 이내로 입력해주세요."
     });
 
 
@@ -475,7 +475,7 @@ exports.updateUserInfo = async function (req, res) {
                 connection.release();
                 return res.json({
                     isSuccess: false,
-                    code: 302,
+                    code: 305,
                     message: "중복된 닉네임입니다."
                 });
             }
