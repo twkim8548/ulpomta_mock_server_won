@@ -13,19 +13,19 @@ exports.cateBoardList = async function (req, res) {
         try {
             const getCateBoardList = `
 
-            SELECT b.title, b.createdAt, (select exists (select img from board)from board)as existimg,
-                (SELECT COUNT(idx) FROM comment as c WHERE c.boardId = b.idx and c.status='ACTIVE') AS commentCount,
-                    (CASE
-                    WHEN TIMESTAMPDIFF(MINUTE, b.createdAt, CURRENT_TIMESTAMP) < 60
-                    then CONCAT(TIMESTAMPDIFF(MINUTE, b.createdAt, CURRENT_TIMESTAMP), ' 분전')
-                    WHEN TIMESTAMPDIFF(HOUR, b.createdAt, CURRENT_TIMESTAMP) < 24
-                    then CONCAT(TIMESTAMPDIFF(HOUR, b.createdAt, CURRENT_TIMESTAMP), ' 시간 전')
-                    else CONCAT(TIMESTAMPDIFF(DAY, b.createdAt, CURRENT_TIMESTAMP), ' 일 전')
-                    END) AS createAt
+            SELECT b.tag, b.title, b.userId, if(img is not null, 1, 0)as existimg,
+            (SELECT COUNT(idx) FROM comment as c WHERE c.boardId = b.idx and c.status='ACTIVE') AS commentCount,
+                (CASE
+                WHEN TIMESTAMPDIFF(MINUTE, b.createdAt, CURRENT_TIMESTAMP) < 60
+                then CONCAT(TIMESTAMPDIFF(MINUTE, b.createdAt, CURRENT_TIMESTAMP), ' 분전')
+                WHEN TIMESTAMPDIFF(HOUR, b.createdAt, CURRENT_TIMESTAMP) < 24
+                then CONCAT(TIMESTAMPDIFF(HOUR, b.createdAt, CURRENT_TIMESTAMP), ' 시간 전')
+                else CONCAT(TIMESTAMPDIFF(DAY, b.createdAt, CURRENT_TIMESTAMP), ' 일 전')
+                END) AS createAt
             FROM board AS b LEFT JOIN userInfo AS u
                 ON u.idx = b.userId AND b.status != 'DELETED'
             WHERE b.category=u.category and u.idx=?
-            ORDER BY b.createdAt DESC;
+            ORDER BY b.idx DESC;
                
                 `    ;
 
@@ -65,7 +65,7 @@ exports.boardList = async function (req, res) {
         try {
             const getBoardList = `
 
-            SELECT b.title, b.createdAt, if(img is not null, 1, 0)as existimg,
+            SELECT b.tag, b.title, b.userId, b.createdAt,if(img is not null, 1, 0)as existimg,
                 (SELECT COUNT(idx) FROM comment as c WHERE c.boardId = b.idx and c.status='ACTIVE') AS commentCount,
                     (CASE
                     WHEN TIMESTAMPDIFF(MINUTE, b.createdAt, CURRENT_TIMESTAMP) < 60
@@ -76,6 +76,7 @@ exports.boardList = async function (req, res) {
                     END) AS createAt
             FROM board AS b LEFT JOIN userInfo AS u
                 ON u.idx = b.userId AND b.status != 'DELETED'
+            WHERE b.category=null
             ORDER BY b.createdAt DESC;
                
                 `    ;
@@ -110,41 +111,70 @@ exports.boardList = async function (req, res) {
 //    27. 상세글보기------------------------------------------------------------//
 
 exports.boardInfo = async function (req, res) {
+    const id= req.verifiedToken.id;
+    const bid= req.query.boardId;
     try {
         const connection = await pool.getConnection(async conn => conn);
         try {
             const getBoardInfo = `
     
-                SELECT b.title, b.content, b.userId AS boardUser, b.img, c.userId AS commentUser, c.content,
-                    (CASE
-                    WHEN TIMESTAMPDIFF(MINUTE, b.createdAt, CURRENT_TIMESTAMP) < 60
-                    then CONCAT(TIMESTAMPDIFF(MINUTE, b.createdAt, CURRENT_TIMESTAMP), ' 분전')
-                    WHEN TIMESTAMPDIFF(HOUR, b.createdAt, CURRENT_TIMESTAMP) < 24
-                    then CONCAT(TIMESTAMPDIFF(HOUR, b.createdAt, CURRENT_TIMESTAMP), ' 시간 전')
-                    else CONCAT(TIMESTAMPDIFF(DAY, b.createdAt, CURRENT_TIMESTAMP), ' 일 전')
-                    END )AS boardCreatedAt,
-                    (CASE
-                    WHEN TIMESTAMPDIFF(MINUTE, c.createdAt, CURRENT_TIMESTAMP) < 60
-                    then CONCAT(TIMESTAMPDIFF(MINUTE, c.createdAt, CURRENT_TIMESTAMP), ' 분전')
-                    WHEN TIMESTAMPDIFF(HOUR, c.createdAt, CURRENT_TIMESTAMP) < 24
-                    then CONCAT(TIMESTAMPDIFF(HOUR, c.createdAt, CURRENT_TIMESTAMP), ' 시간 전')
-                    else CONCAT(TIMESTAMPDIFF(DAY, c.createdAt, CURRENT_TIMESTAMP), ' 일 전')
-                    END )AS commentCreatedAt
-                    FROM board AS b LEFT JOIN comment AS c
-                         ON b.idx = c.boardId and c.status='ACTIVE'
-                    WHERE b.idx=?;
+            SELECT title, content, userId, img, 
+                (CASE
+                WHEN TIMESTAMPDIFF(MINUTE, createdAt, CURRENT_TIMESTAMP) < 60
+                then CONCAT(TIMESTAMPDIFF(MINUTE, createdAt, CURRENT_TIMESTAMP), ' 분전')
+                WHEN TIMESTAMPDIFF(HOUR, createdAt, CURRENT_TIMESTAMP) < 24
+                then CONCAT(TIMESTAMPDIFF(HOUR, createdAt, CURRENT_TIMESTAMP), ' 시간 전')
+                else CONCAT(TIMESTAMPDIFF(DAY, createdAt, CURRENT_TIMESTAMP), ' 일 전')
+                END )AS boardCreatedAt,
+                (select count(userId) 
+                from likeInfo
+                where type=1 and likeId=? and status='ACTIVE')as likecount,
+                (select count(idx)
+                from bookmark
+                where boardId=? and userId=? and status='ACTIVE')as bookmark #내가 했으면 1
+            FROM board 
+            WHERE status='ACTIVE' and idx=?;
                 `    ;
 
-            const getBoardParams = [req.query.boardId];
+            const getBoardParams = [bid, bid, id, bid];
 
             const[boardInfo]= await connection.query(getBoardInfo, getBoardParams);
+
+
+            const getCommentInfo = `
+                    
+            SELECT  c.userId, c.content, 
+            (select count(userId) 
+            from likeInfo
+            where type=2 and likeId=? and status='ACTIVE')as likecount,
+            (SELECT count(idx)
+            FROM comment
+            WHERE  commentId=? and status='ACTIVE') as recommentcount,
+            (CASE
+            WHEN TIMESTAMPDIFF(MINUTE, c.createdAt, CURRENT_TIMESTAMP) < 60
+            then CONCAT(TIMESTAMPDIFF(MINUTE, c.createdAt, CURRENT_TIMESTAMP), ' 분전')
+            WHEN TIMESTAMPDIFF(HOUR, c.createdAt, CURRENT_TIMESTAMP) < 24
+            then CONCAT(TIMESTAMPDIFF(HOUR, c.createdAt, CURRENT_TIMESTAMP), ' 시간 전')
+            else CONCAT(TIMESTAMPDIFF(DAY, c.createdAt, CURRENT_TIMESTAMP), ' 일 전')
+            END )AS commentCreatedAt
+            FROM board as b left join comment as c on b.idx=c.boardId
+            WHERE b.idx=?;
+                `    ;
+
+            const getCommentParams = [bid];
+
+            const[CommentInfo]= await connection.query(getCommentInfo, getCommentParams);
+
+
+
 
             await connection.commit(); // COMMIT
             connection.release();
 
             
             res.json({
-                list:boardInfo[0],
+                board:boardInfo[0],
+                commentlist:CommentInfo,
                 isSuccess: true,
                 code: 200,
                 message: "상세 게시글 조회 성공"
@@ -202,7 +232,7 @@ exports.createBoard = async function (req, res) {
 //     29. 글 삭제  ------------------------------------------------------------//
 exports.deleteBoard = async function (req, res) {
     const id= req.verifiedToken.id;
-    const bid= req.params.boardId;
+    const bid= req.query.boardId;
 
 
     try {
@@ -420,16 +450,18 @@ exports.createRecomment = async function (req, res) {
     const id= req.verifiedToken.id;//회원id
     const content= req.body.content;
     const cid=req.body.commentId;
+    const bid=req.body.boardId;
 
     try {
         const connection = await pool.getConnection(async conn => conn);
         try {            
 
             const insertRecommentQuery = `
-                insert recomment(userId, commentId, content) values
-                (?,?,?);
+                
+            insert comment(userId, boardId, commentId, content) values
+                (?,?, ?,?);
                     `;
-            const insertRecommentParams = [id, cid, content];
+            const insertRecommentParams = [id, bid, cid, content];
             await connection.query(insertRecommentQuery, insertRecommentParams);
 
             await connection.commit(); // COMMIT
@@ -502,10 +534,15 @@ exports.userBoard = async function (req, res) {
         try {
             const getUserBoardQuery = `
 
-                SELECT b.title, b.content, u.nickname, b.img
-                FROM board AS b JOIN userInfo AS u ON u.idx = b.userId AND b.status != 'DELETED'
-                WHERE u.idx = ?
-                ORDER BY b.idx DESC;
+            SELECT  b.title, count(l.idx) as likeCount, count(c.idx) as commentCount
+            FROM  board AS b  LEFT JOIN userInfo AS u 
+                ON u.idx = b.userId AND b.status != 'DELETED'
+                LEFT JOIN likeInfo as l on b.idx=l.likeId
+                LEFT JOIN comment as c on b.idx=c.boardId
+            WHERE u.idx = ?
+            group by b.idx
+            ORDER BY b.idx DESC;
+
                 `    ;
 
             const getUserBoardParams = [id];
@@ -544,9 +581,12 @@ exports.userMark = async function (req, res) {
         try {
             const getUserMarkQuery = `
 
-                select b.title #, b의 좋아요개수, 댓글 개수
-                from bookmark as m left join board as b on m.boardId=b.idx
-                where b.userId=? and (b.status='ACTIVE' and m.status='ACTIVE');
+            select b.title, count(l.idx) as likeCount, count(c.idx) as commentCount
+            from bookmark as m join board as b on m.boardId=b.idx
+                LEFT JOIN likeInfo as l on b.idx=l.likeId
+                LEFT JOIN comment as c on b.idx=c.boardId
+            where b.userId=? and (b.status='ACTIVE' and m.status='ACTIVE')
+            group by b.idx;
                 `    ;
 
             const getUserMarkParams = [id];
