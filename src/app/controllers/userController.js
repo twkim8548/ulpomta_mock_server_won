@@ -551,3 +551,78 @@ exports.deleteUser = async function (req, res) {
 
 
 
+//27. 공지사항 조회
+
+exports.noticeList = async function (req, res) {
+
+    try {
+        const connection = await pool.getConnection(async conn => conn);
+        try {
+
+            const getNoticeListQuery = `
+
+                select title, date(createdAt)
+                from notice
+                where status='ACTIVE';
+                    `;
+            
+            const list = await connection.query(getNoticeListQuery);
+
+            await connection.commit(); // COMMIT
+            connection.release();
+
+            return res.json({
+                list:list[0],
+                isSuccess: true,
+                code: 200,
+                message: "공지사항 목록 조회가 완료되었습니다"
+            });
+        } catch (err) {
+            await connection.rollback(); // ROLLBACK
+            connection.release();
+            logger.error(`App - Get Notice List Query error\n: ${err.message}`);
+            return res.status(501).send(`Error: ${err.message}`);
+        }
+    } catch (err) {
+        logger.error(`App - Get Notice List DB Connection error\n: ${err.message}`);
+        return res.status(502).send(`Error: ${err.message}`);
+    }
+};
+//28. 공지사항 상세 조회
+
+exports.noticeInfo = async function (req, res) {
+    const nid= req.query.noticeId
+
+    try {
+        const connection = await pool.getConnection(async conn => conn);
+        try {
+
+            const getNoticeInfoQuery = `
+
+                select title, content
+                from notice
+                where idx=?
+                    `;
+            
+            const list = await connection.query(getNoticeInfoQuery, nid);
+
+            await connection.commit(); // COMMIT
+            connection.release();
+
+            return res.json({
+                list:list[0],
+                isSuccess: true,
+                code: 200,
+                message: "공지사항 목록 조회가 완료되었습니다"
+            });
+        } catch (err) {
+            await connection.rollback(); // ROLLBACK
+            connection.release();
+            logger.error(`App - Get Notice List Query error\n: ${err.message}`);
+            return res.status(501).send(`Error: ${err.message}`);
+        }
+    } catch (err) {
+        logger.error(`App - Get Notice List DB Connection error\n: ${err.message}`);
+        return res.status(502).send(`Error: ${err.message}`);
+    }
+};

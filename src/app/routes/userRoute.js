@@ -12,4 +12,7 @@ module.exports = function(app){
     app.route('/user').delete(jwtMiddleware, user.deleteUser);//39.회원 탈퇴
 
     app.get('/check', jwtMiddleware, user.check);
+
+    app.get('/notice',jwtMiddleware, user.noticeList);
+    app.get('/notice/info',jwtMiddleware, user.noticeInfo);
 };

@@ -41,7 +41,7 @@ exports.getSubject = async function (req, res) {
             connection.release();
 
     
-
+            
             res.json({
                 subjectInfo:stat2_1,
                 isSuccess: true,
@@ -69,7 +69,7 @@ exports.createSubject = async function (req, res) {
     const name = req.body.subjectName;//추가할 과목 이름
 
     if (name.length<1) return res.json({isSuccess: false, code: 301, message: "1글자 이상이어야 합니다."});
-
+    //module.result( false, 301, "1글자 이상이어야 합니다." );
     try {
         const connection = await pool.getConnection(async conn => conn);
         try {            
@@ -84,11 +84,7 @@ exports.createSubject = async function (req, res) {
 
             if (SubjectRows.length > 0) {
                 connection.release();
-                return res.json({
-                    isSuccess: false,
-                    code: 302,
-                    message: "이미 존재하는 과목입니다."
-                });
+                return res.json({isSuccess: false, code: 302, message: "이미 존재하는 과목입니다."});
             }
 
             await connection.beginTransaction(); // START TRANSACTION
