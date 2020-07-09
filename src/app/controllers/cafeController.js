@@ -16,6 +16,8 @@ exports.cateBoardList = async function (req, res) {
             SELECT b.tag, b.title, b.userId, if(img is not null, 1, 0)as existimg,
             (SELECT COUNT(idx) FROM comment as c WHERE c.boardId = b.idx and c.status='ACTIVE') AS commentCount,
                 (CASE
+                WHEN TIMESTAMPDIFF(SECOND, b.createdAt, CURRENT_TIMESTAMP) < 60
+                then CONCAT(TIMESTAMPDIFF(SECOND, b.createdAt, CURRENT_TIMESTAMP), ' 초전')
                 WHEN TIMESTAMPDIFF(MINUTE, b.createdAt, CURRENT_TIMESTAMP) < 60
                 then CONCAT(TIMESTAMPDIFF(MINUTE, b.createdAt, CURRENT_TIMESTAMP), ' 분전')
                 WHEN TIMESTAMPDIFF(HOUR, b.createdAt, CURRENT_TIMESTAMP) < 24
@@ -38,7 +40,7 @@ exports.cateBoardList = async function (req, res) {
 
             
             res.json({
-                list:cateBoardList[0],
+                list:cateBoardList,
                 isSuccess: true,
                 code: 200,
                 message: "카테고리별 게시글 목록 조회 성공"
@@ -65,9 +67,11 @@ exports.boardList = async function (req, res) {
         try {
             const getBoardList = `
 
-            SELECT b.tag, b.title, b.userId, b.createdAt,if(img is not null, 1, 0)as existimg,
+            SELECT b.tag, b.title, b.userId,if(img is not null, 1, 0)as existimg,
                 (SELECT COUNT(idx) FROM comment as c WHERE c.boardId = b.idx and c.status='ACTIVE') AS commentCount,
                     (CASE
+                    WHEN TIMESTAMPDIFF(SECOND, b.createdAt, CURRENT_TIMESTAMP) < 60
+                    then CONCAT(TIMESTAMPDIFF(SECOND, b.createdAt, CURRENT_TIMESTAMP), ' 초전')
                     WHEN TIMESTAMPDIFF(MINUTE, b.createdAt, CURRENT_TIMESTAMP) < 60
                     then CONCAT(TIMESTAMPDIFF(MINUTE, b.createdAt, CURRENT_TIMESTAMP), ' 분전')
                     WHEN TIMESTAMPDIFF(HOUR, b.createdAt, CURRENT_TIMESTAMP) < 24
@@ -76,7 +80,7 @@ exports.boardList = async function (req, res) {
                     END) AS createAt
             FROM board AS b LEFT JOIN userInfo AS u
                 ON u.idx = b.userId AND b.status != 'DELETED'
-            WHERE b.category=null
+            #WHERE b.category=null
             ORDER BY b.createdAt DESC;
                
                 `    ;
@@ -120,6 +124,8 @@ exports.boardInfo = async function (req, res) {
     
             SELECT title, content, userId, img, 
                 (CASE
+                WHEN TIMESTAMPDIFF(SECOND, b.createdAt, CURRENT_TIMESTAMP) < 60
+                then CONCAT(TIMESTAMPDIFF(SECOND, b.createdAt, CURRENT_TIMESTAMP), ' 초전')
                 WHEN TIMESTAMPDIFF(MINUTE, createdAt, CURRENT_TIMESTAMP) < 60
                 then CONCAT(TIMESTAMPDIFF(MINUTE, createdAt, CURRENT_TIMESTAMP), ' 분전')
                 WHEN TIMESTAMPDIFF(HOUR, createdAt, CURRENT_TIMESTAMP) < 24
@@ -132,8 +138,8 @@ exports.boardInfo = async function (req, res) {
                 (select count(idx)
                 from bookmark
                 where boardId=? and userId=? and status='ACTIVE')as bookmark #내가 했으면 1
-            FROM board 
-            WHERE status='ACTIVE' and idx=?;
+            FROM board as b
+            WHERE status='ACTIVE' and idx=? ;
                 `    ;
 
             const getBoardParams = [bid, bid, id, bid];
@@ -144,12 +150,6 @@ exports.boardInfo = async function (req, res) {
             const getCommentInfo = `
                     
             SELECT  c.userId, c.content, 
-            (select count(userId) 
-            from likeInfo
-            where type=2 and likeId=? and status='ACTIVE')as likecount,
-            (SELECT count(idx)
-            FROM comment
-            WHERE  commentId=? and status='ACTIVE') as recommentcount,
             (CASE
             WHEN TIMESTAMPDIFF(MINUTE, c.createdAt, CURRENT_TIMESTAMP) < 60
             then CONCAT(TIMESTAMPDIFF(MINUTE, c.createdAt, CURRENT_TIMESTAMP), ' 분전')
@@ -158,19 +158,15 @@ exports.boardInfo = async function (req, res) {
             else CONCAT(TIMESTAMPDIFF(DAY, c.createdAt, CURRENT_TIMESTAMP), ' 일 전')
             END )AS commentCreatedAt
             FROM board as b left join comment as c on b.idx=c.boardId
-            WHERE b.idx=?;
+            WHERE b.idx=? and b.status='ACTIVE' and c.status='ACTIVE';
                 `    ;
 
             const getCommentParams = [bid];
 
             const[CommentInfo]= await connection.query(getCommentInfo, getCommentParams);
 
-
-
-
             await connection.commit(); // COMMIT
             connection.release();
-
             
             res.json({
                 board:boardInfo[0],
@@ -445,7 +441,7 @@ exports.likeComment = async function (req, res) {
     }
 };
 
-// 35. 답글 달기 createRecomment------------------------------------------------------------//
+// 35. 답글 달기 createRecomment---------------------------------------------------- --------//
 exports.createRecomment = async function (req, res) {
     const id= req.verifiedToken.id;//회원id
     const content= req.body.content;
@@ -496,10 +492,10 @@ exports.search = async function (req, res) {
 
             const searchQuery = `
             
-                select title, concat(left(content, 20), '...')
+                select title, concat(left(content, 20), '...') as preview
                 from board
-                where title like '%${word}%' and status='ACTIVE';
-
+                where title like '%${word}%' and status='ACTIVE'
+                limit 20;
                     `;
             const searchParams = [word];
             const [search] = await connection.query(searchQuery, searchParams);
@@ -507,7 +503,7 @@ exports.search = async function (req, res) {
             await connection.commit(); // COMMIT
             connection.release();
             return res.json({
-                result:search[0],
+                result:search,
                 isSuccess: true,
                 code: 200,
                 message: "검색에 성공했습니다"
@@ -553,7 +549,7 @@ exports.userBoard = async function (req, res) {
             connection.release();
             
             res.json({
-                list:getUserBoardRows[0],
+                list:getUserBoardRows,
                 isSuccess: true,
                 code: 200,
                 message: "작성자 게시글 조회 성공"
@@ -597,10 +593,10 @@ exports.userMark = async function (req, res) {
             connection.release();
             
             res.json({
-                list:getUserMarkRows[0],
+                list:getUserMarkRows,
                 isSuccess: true,
                 code: 200,
-                message: "작성자 게시글 조회 성공"
+                message: "북마크 목록 조회 성공"
             });
             
         } catch (err) {
@@ -611,6 +607,54 @@ exports.userMark = async function (req, res) {
         }
     } catch (err) {
         logger.error(`App - Get User Mark DB Connection error\n: ${err.message}`);
+        return res.status(502).send(`Error: ${err.message}`);
+    }
+};
+
+//답댓글 펼치기
+
+
+exports.getRecomment = async function (req, res) {
+    const cid=req.body.commentId;
+
+    try {
+        const connection = await pool.getConnection(async conn => conn);
+        try {            
+
+            const getRecommentQuery = `
+                
+            select c2.userId, c2.content,
+		        (CASE
+                WHEN TIMESTAMPDIFF(SECOND, c2.createdAt, CURRENT_TIMESTAMP) < 60
+                then CONCAT(TIMESTAMPDIFF(SECOND, c2.createdAt, CURRENT_TIMESTAMP), ' 초전')
+                WHEN TIMESTAMPDIFF(MINUTE, c2.createdAt, CURRENT_TIMESTAMP) < 60
+                then CONCAT(TIMESTAMPDIFF(MINUTE, c2.createdAt, CURRENT_TIMESTAMP), ' 분전')
+                WHEN TIMESTAMPDIFF(HOUR, c2.createdAt, CURRENT_TIMESTAMP) < 24
+                then CONCAT(TIMESTAMPDIFF(HOUR, c2.createdAt, CURRENT_TIMESTAMP), ' 시간 전')
+                else CONCAT(TIMESTAMPDIFF(DAY, c2.createdAt, CURRENT_TIMESTAMP), ' 일 전')
+                END )AS CreatedAt
+            from comment c1 left join comment c2 on c1.idx=c2.commentId
+            where c1.idx=? and c1.status='ACTIVE' and c2.status='ACTIVE"
+                    `;
+            const getRecommentParams = [cid];
+            const recomment =await connection.query(getRecommentQuery, getRecommentParams);
+
+            await connection.commit(); // COMMIT
+            connection.release();
+
+            return res.json({
+                list:recomment[0],
+                isSuccess: true,
+                code: 200,
+                message: "대댓글 조회가 완료되었습니다"
+            });
+        } catch (err) {
+            connection.release();
+            logger.error(`App - Insert Recomment Query error\n: ${err.message}`);
+            return res.status(501).send(`Error: ${err.message}`);
+        }
+    } catch (err) {
+        logger.error(`App - Insert Recomment Connection error\n: ${err.message}`);
         return res.status(502).send(`Error: ${err.message}`);
     }
 };

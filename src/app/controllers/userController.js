@@ -6,6 +6,7 @@ const regexEmail = require('regex-email');
 const crypto = require('crypto');
 const secret_config = require('../../../config/secret');
 
+const nodemailer = require('nodemailer');
 
 
 /**
@@ -14,7 +15,7 @@ const secret_config = require('../../../config/secret');
  */
 exports.signUp = async function (req, res) {
     const {
-        email, password, nickname, category
+        email, password
     } = req.body;
  
 
@@ -28,23 +29,14 @@ exports.signUp = async function (req, res) {
         message: "비밀번호는 6글자 이상이어야 합니다."
     });
 
-    if (nickname.length<2) return res.json({isSuccess: false, code: 305, message: "닉네임은 2글자 이상이어야 합니다."});
-    if (nickname.length > 20) return res.json({
-        isSuccess: false,
-        code: 306,
-        message: "닉네임은 60Byte(한글 20글자) 미만이어야 합니다."
-    });
-
-    if (!category) return res.json({isSuccess: false, code: 307, message: "카테고리를 선택해주세요."});
-
     try {
         const connection = await pool.getConnection(async conn => conn);
         try {
-            // 이메일 중복 확인
+            // 이메일 ㅇ. 인증 ㅇ
             const selectEmailQuery = `
                 SELECT idx, email 
                 FROM userInfo 
-                WHERE email = ?;
+                WHERE email = ? and token=1;
                 `;
             const selectEmailParams = [email];
             const [emailRows] = await connection.query(selectEmailQuery, selectEmailParams);
@@ -58,12 +50,150 @@ exports.signUp = async function (req, res) {
                 });
             }
 
-            //노드메일러에서 임시 토큰 받아오는거
+            //이메일 ㅇ. 토큰 ㄴ
+            const selectEmail2Query = `
+                SELECT idx, email 
+                FROM userInfo 
+                WHERE email = ? and token is null;
+                `;
+            const selectEmail2Params = [email];
+            const [email2Rows] = await connection.query(selectEmail2Query, selectEmail2Params);
 
-            //메일 url을 클릭하여 계정 활성화 되면 생성 완료
-            //이후 첫 로그인에서 닉네임과 카테고리를 정하는 것 까지 포함
-            //일단 nodemailer 빼고 진행. 계정 활성화 여부 반영하는 쿼리로 수정도 할것
+            if (email2Rows.length > 0) {
+                connection.release();
+                return res.json({
+                    isSuccess: false,
+                    code: 308,
+                    message: "이메일 인증을 진행해주세요."
+                });
+            }
 
+            const hashedPassword = await crypto.createHash('sha512').update(password).digest('hex');
+
+            //계정 생성
+            const insertUserQuery = `
+                INSERT userInfo(email, pswd) values
+                (?, ?);
+                `;
+
+            let insertUserParams = [email, hashedPassword];
+
+            await connection.query(insertUserQuery, insertUserParams);
+
+
+            const smtpTransport = nodemailer.createTransport({
+                service: "Naver",
+                auth: {
+                    user: "022499@naver.com",
+                    pass: "tladnjs02/"
+                },
+                tls: {
+                    rejectUnauthorized: false
+                }
+            });
+
+            const mailOptions = {
+                from: "022499@naver.com",
+                to: email,
+                subject: "이메일 인증을 진행해주세요!!",
+                text: "http://54.168.156.34:3000/test?email=" + email
+            };
+
+            await smtpTransport.sendMail(mailOptions, (error, responses) => {
+                if (error) {
+                    res.send({ msg: 'err' });
+                } else {
+                    res.send({ msg: 'sucess' });
+                }
+                smtpTransport.close();
+            });
+
+            //기본과목 생성
+            const insertSubjectQuery = `
+                INSERT subjectInfo(userId, name) values
+                ((select idx from userInfo where email=?),'영어'),
+                ((select idx from userInfo where email=?),'수학');
+                `;
+
+            let insertSubjectParams = [email, email];
+
+            await connection.query(insertSubjectQuery, insertSubjectParams);
+            
+
+
+            await connection.commit(); // COMMIT
+            connection.release();
+            return res.json({
+                isSuccess: true,
+                code: 200,
+                message: "회원가입 성공. 메일로 인증을 진행해주세요!!"
+            });
+
+        } catch (err) {
+            await connection.rollback(); // ROLLBACK
+            connection.release();
+            logger.error(`App - SignUp Query error\n: ${err.message}`);
+            return res.status(501).send(`Error: ${err.message}`);
+        }
+    } catch (err) {
+        logger.error(`App - SignUp DB Connection error\n: ${err.message}`);
+        return res.status(502).send(`Error: ${err.message}`);
+    }
+};
+
+//1-1. 회원가입 추가
+
+
+exports.signIn2 = async function (req, res) {
+    const {
+        email, password, nickname, category
+    } = req.body;
+
+    if (!email) return res.json({isSuccess: false, code: 301, message: "인증되지 않은 이메일 주소입니다. 수신함에서 인증링크를 클릭해주세요."});
+    if (!regexEmail.test(email)) return res.json({isSuccess: false, code: 303, message: "이메일을 형식을 정확하게 입력해주세요."});
+
+    if (!password) return res.json({isSuccess: false, code: 304, message: "비밀번호를 입력해주세요. 다시 확인해주세요."});
+    if (!nickname) return res.json({ isSuccess: false, code: 306, message: "닉네임을 입력 해주세요." });
+    if (nickname.length > 20) return res.json({
+        isSuccess: false,
+        code: 307,
+        message: "닉네임은 최대 20자리를 입력해주세요."
+    });
+    if(!category) return res.json({ isSuccess: false, code: 306, message: "카테고리를 입력 해주세요." });
+
+    try {
+        const connection = await pool.getConnection(async conn => conn);
+        try {
+            
+            //토큰 인증받았는지 확인하기
+            const getTokenQuery= `
+                SELECT token
+                FROM userInfo 
+                WHERE email = ? ;
+            `;
+            const getTokenParams=[email];
+            const [getTokenRows] = await connection.query(getTokenQuery, getTokenParams);
+
+            if (getTokenRows.length < 1) {
+                connection.release();
+                return res.json({
+                    isSuccess: false,
+                    code: 309,
+                    message: "인증을 진행해주세요."
+                });
+            }
+
+            //받은 이메일 정보에 닉네임이 없다면 닉네임과 카테고리를 삽입해주세요
+            const getNicknameQuery= `
+                SELECT nickname 
+                FROM userInfo 
+                WHERE email = ? ;
+            `;
+            const getNicknameParams=[email];
+            const [getNicknameRows] = await connection.query(getNicknameQuery, getNicknameParams);
+
+            if (getNicknameRows.length < 1) {
+            
             // 닉네임 중복 확인
             const selectNicknameQuery = `
                 SELECT email, nickname 
@@ -82,45 +212,31 @@ exports.signUp = async function (req, res) {
                 });
             }
 
-            await connection.beginTransaction(); // START TRANSACTION
-            const hashedPassword = await crypto.createHash('sha512').update(password).digest('hex');
 
-            const insertUserInfoQuery = `
-                INSERT INTO userInfo(email, pswd, nickname, category)
-                VALUES (?, ?, ?, ?);
-                    `;
-            const insertUserInfoParams = [email, hashedPassword, nickname, category];
-            await connection.query(insertUserInfoQuery, insertUserInfoParams);
-            
-            await connection.beginTransaction(); // START TRANSACTION
-            //계정 생성 시 기본과목 추가 .서브쿼리 안쓰고하는거 ...해야함   
-            //const createSubjectQuery = `
-            //INSERT INTO subjectInfo(userid, name) VALUES 
-            //((select idx from userInfo Where email=?),'영어'),
-            //((select idx from userInfo Where email=?),'수학');
-            //    `;
-            //const createSubjectParams = [email, email];
-            //await connection.query(createSubjectQuery, createSubjectParams);
+                const insertNicknameQuery = `
+                    update userInfo
+                    set nickname=?, category=?
+                    where email=?;
+                `;
+                const insertNicknameParams = [nickname, category, email];
+                await connection.query(insertNicknameQuery, insertNicknameParams);
 
+            }
 
-            await connection.commit(); // COMMIT
-            connection.release();
-            return res.json({
+            res.json({
                 isSuccess: true,
                 code: 200,
-                message: "회원가입 성공"
+                message: "닉네임, 카테고리 설정 성공"
             });
 
-            
-            
-        } catch (err) {
-            await connection.rollback(); // ROLLBACK
             connection.release();
-            logger.error(`App - SignUp Query error\n: ${err.message}`);
+        } catch (err) {
+            logger.error(`App - SignIn Query error\n: ${JSON.stringify(err)}`);
+            connection.release();
             return res.status(501).send(`Error: ${err.message}`);
         }
     } catch (err) {
-        logger.error(`App - SignUp DB Connection error\n: ${err.message}`);
+        logger.error(`App - SignIn DB Connection error\n: ${JSON.stringify(err)}`);
         return res.status(502).send(`Error: ${err.message}`);
     }
 };
@@ -129,6 +245,7 @@ exports.signUp = async function (req, res) {
  update : 2019.11.01
  02.signIn API = 로그인
  **/
+
 exports.signIn = async function (req, res) {
     const {
         email, password
@@ -137,11 +254,12 @@ exports.signIn = async function (req, res) {
     if (!email) return res.json({isSuccess: false, code: 301, message: "인증되지 않은 이메일 주소입니다. 수신함에서 인증링크를 클릭해주세요."});
     if (!regexEmail.test(email)) return res.json({isSuccess: false, code: 303, message: "이메일을 형식을 정확하게 입력해주세요."});
 
-    if (!password) return res.json({isSuccess: false, code: 304, message: "비밀번호가 일치하지 않습니다. 다시 확인해주세요."});
+    if (!password) return res.json({isSuccess: false, code: 304, message: "비밀번호를 입력해주세요. 다시 확인해주세요."});
 
     try {
         const connection = await pool.getConnection(async conn => conn);
         try {
+            
             const selectUserInfoQuery = `
                 SELECT idx, email , pswd, nickname, status 
                 FROM userInfo 
@@ -170,9 +288,23 @@ exports.signIn = async function (req, res) {
                     message: "비밀번호가 일치하지 않습니다. 다시 확인해주세요."
                 });
             }
+            //토큰 인증받았는지 확인하기
+            const getTokenQuery= `
+                SELECT token
+                FROM userInfo 
+                WHERE email = ? ;
+            `;
+            const getTokenParams=[email];
+            const [getTokenRows] = await connection.query(getTokenQuery, getTokenParams);
 
-            //비활성화, 탈퇴여부 관계 없이 없는 계정으로 다룸
-
+            if (getTokenRows.length < 1) {
+                connection.release();
+                return res.json({
+                    isSuccess: false,
+                    code: 309,
+                    message: "인증을 진행해주세요."
+                });
+            }
 
 
             //토큰 생성
@@ -188,8 +320,6 @@ exports.signIn = async function (req, res) {
                     subject: 'userInfo',
                 } // 유효 시간은 365일
             );
-
-
 
             res.json({
                 result:
@@ -212,9 +342,11 @@ exports.signIn = async function (req, res) {
     }
 };
 
+
+
 /**
  update : 2019.09.23
- 03.check API = token 검증
+ 06.check API = token 검증
  **/
 exports.check = async function (req, res) {
     res.json({
@@ -228,9 +360,7 @@ exports.check = async function (req, res) {
 
 //03. 이메일 찾기
 exports.findEmail= async function(req, res){
-    const {
-        nickname
-    } = req.body;
+    const nickname = req.query.nickname;
 
     if (nickname.length<2) return res.json({isSuccess: false, code: 305, message: "닉네임은 2글자 이상이어야 합니다."});
 
@@ -257,6 +387,13 @@ exports.findEmail= async function(req, res){
                 });
             }
             //조회한 이메일에서 @앞 문자열 기준 앞 두글자 제외 다 별표표시
+            // const email2= userInfoRows.email;
+            // email2= email2.split('@');
+            // email2[1];
+
+            // email1=split(2,userInfoRows.email)
+
+            // remail=email1[0]+'******'+email2;
 
 
             //비활성화, 탈퇴여부 관계 없이 없는 계정으로 다룸
@@ -280,13 +417,11 @@ exports.findEmail= async function(req, res){
     }
 
 };
-//존재하는 이메일인지 확인->이메일로 재설정 페이지 발송
+//05. 존재하는 이메일인지 확인->이메일로 재설정 페이지 발송
 
 exports.checkEmail= async function(req, res){
-    const {
-        email
-    } = req.body;
-
+    const email=req.body.email;
+    console.log(email);
    
     if (!email) return res.json({isSuccess: false, code: 301, message: "이메일 형식이 잘못되었습니다."});
     if (!regexEmail.test(email)) return res.json({isSuccess: false, code: 302, message: "이메일 형식이 잘못되었습니다."});
@@ -312,17 +447,42 @@ exports.checkEmail= async function(req, res){
                 });
             }
             //이메일에 재설정 링크 쏘기
+            
+            
+            const smtpTransport = nodemailer.createTransport({
+                service: "Naver",
+                auth: {
+                    user: "022499@naver.com",
+                    pass: "tladnjs02/"
+                },
+                tls: {
+                    rejectUnauthorized: false
+                }
+            });
 
-        
+            const mailOptions = {
+                from: "022499@naver.com",
+                to: email,
+                subject: "이메일 인증을 진행해주세요!!",
+                text: "http://54.168.156.34:3000/findpswd?email=" + email
+            };
 
+            await smtpTransport.sendMail(mailOptions, (error, responses) => {
+                if (error) {
+                    res.send({ msg: 'err' });
+                } else {
+                    res.send({ msg: '비밀번호 재설정 링크 전송 성공' });
+                }
+                smtpTransport.close();
+            });
+    
             //비활성화, 탈퇴여부 관계 없이 없는 계정으로 다룸
 
             res.json({
                 isSuccess: true,
                 code: 200,
-                message: "비밀번호 재설정 성공"
+                message: "비밀번호 재설정 링크 전송 성공"
             });
-
             connection.release();
         } catch (err) {
             logger.error(`App - checkEmail Query error\n: ${JSON.stringify(err)}`);
@@ -341,7 +501,7 @@ exports.checkEmail= async function(req, res){
 //04. 비밀번호 재설정
 
 exports.updatePswd= async function(req, res){
-    const id = req.verifiedToken.id;//재설정 링크에서 토큰 확인 ??
+    const email = req.query.email;
     const {
         password//재설정 링크에서 받아온 비밀번호
     } = req.body;
@@ -362,12 +522,10 @@ exports.updatePswd= async function(req, res){
             const updatePswdQuery = `
                 UPDATE userInfo
                 SET pswd=?
-                WHERE idx = ? AND status='ACTIVE';
+                WHERE email = ? AND status='ACTIVE';
             `;
-            let updatePswdParams = [hashedPassword,id];
+            let updatePswdParams = [hashedPassword,email];
             await connection.query(updatePswdQuery, updatePswdParams);
-
-
 
             //비활성화, 탈퇴여부 관계 없이 없는 계정으로 다룸
 
@@ -396,9 +554,6 @@ exports.getUserInfo = async function (req, res) {
     try {
         const connection = await pool.getConnection(async conn => conn);
         try {
-
-            await connection.beginTransaction(); // START TRANSACTION
-
             const getUserInfoQuery = `
 
                 SELECT email, nickname, message
@@ -422,7 +577,6 @@ exports.getUserInfo = async function (req, res) {
                 message: "조회에 성공했습니다"
             });
         } catch (err) {
-            await connection.rollback(); // ROLLBACK
             connection.release();
             logger.error(`App - Get UserInfo Query error\n: ${err.message}`);
             return res.status(501).send(`Error: ${err.message}`);
@@ -566,13 +720,13 @@ exports.noticeList = async function (req, res) {
                 where status='ACTIVE';
                     `;
             
-            const list = await connection.query(getNoticeListQuery);
+            const [list] = await connection.query(getNoticeListQuery);
 
             await connection.commit(); // COMMIT
             connection.release();
 
             return res.json({
-                list:list[0],
+                list:list,
                 isSuccess: true,
                 code: 200,
                 message: "공지사항 목록 조회가 완료되었습니다"
@@ -610,10 +764,10 @@ exports.noticeInfo = async function (req, res) {
             connection.release();
 
             return res.json({
-                list:list[0],
+                info:list[0],
                 isSuccess: true,
                 code: 200,
-                message: "공지사항 목록 조회가 완료되었습니다"
+                message: "공지사항 상세 조회가 완료되었습니다"
             });
         } catch (err) {
             await connection.rollback(); // ROLLBACK
@@ -623,6 +777,42 @@ exports.noticeInfo = async function (req, res) {
         }
     } catch (err) {
         logger.error(`App - Get Notice List DB Connection error\n: ${err.message}`);
+        return res.status(502).send(`Error: ${err.message}`);
+    }
+};
+
+
+//토큰인증 api
+
+exports.token = async function (req, res) {
+    const email =req.query.email;
+
+    try {
+        const connection = await pool.getConnection(async conn => conn);
+        try {
+            const insertTokenQuery = `
+                update userInfo 
+                set token=1
+                where email=?
+                `;
+
+            let insertTokenParams = [email];
+
+            const [Rows] = await connection.query(insertTokenQuery, insertTokenParams);
+
+
+            res.json({
+                message: "이메일인증에 성공했습니다 . 어플로 돌아가서 로그인해주세요~!!"
+            });
+
+            connection.release();
+        } catch (err) {
+            logger.error(`App - SignIn Query error\n: ${JSON.stringify(err)}`);
+            connection.release();
+            return res.status(501).send(`Error: ${err.message}`);
+        }
+    } catch (err) {
+        logger.error(`App - SignIn DB Connection error\n: ${JSON.stringify(err)}`);
         return res.status(502).send(`Error: ${err.message}`);
     }
 };

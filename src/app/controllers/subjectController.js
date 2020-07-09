@@ -69,15 +69,15 @@ exports.createSubject = async function (req, res) {
     const name = req.body.subjectName;//추가할 과목 이름
 
     if (name.length<1) return res.json({isSuccess: false, code: 301, message: "1글자 이상이어야 합니다."});
-    //module.result( false, 301, "1글자 이상이어야 합니다." );
+    
     try {
         const connection = await pool.getConnection(async conn => conn);
         try {            
             // 과목명 중복 확인
             const selectSubjectQuery = `
-                SELECT subjectInfo.name 
-                FROM subjectInfo , userInfo
-                WHERE subjectInfo.name = ? AND userInfo.idx = ? ;
+            SELECT *
+            FROM subjectInfo join userInfo on subjectInfo.userId=userInfo.idx
+            WHERE subjectInfo.name = ? AND userInfo.idx = ?;
                 `;
             const selectSubjectParams = [name, id];
             const [SubjectRows] = await connection.query(selectSubjectQuery, selectSubjectParams);
@@ -87,7 +87,6 @@ exports.createSubject = async function (req, res) {
                 return res.json({isSuccess: false, code: 302, message: "이미 존재하는 과목입니다."});
             }
 
-            await connection.beginTransaction(); // START TRANSACTION
 
             const insertSubjectQuery = `
                 INSERT INTO subjectInfo(userId, name)
@@ -181,22 +180,40 @@ exports.updateSubject = async function (req, res) {
 //07. 과목 삭제
 
 exports.deleteSubject = async function (req, res) {
-    const sid = req.params.subjectId;//변경할 과목 id
+    const subjectName = req.query.subjectName;//삭제할 과목 id
     const id= req.verifiedToken.id;
 
     try {
         const connection = await pool.getConnection(async conn => conn);
         try {
+            //과목 존재 여부 확인
+            // const getSubQuery=`
 
-            await connection.beginTransaction(); // START TRANSACTION
+            // SELECT subjectInfo.idx, subjectInfo.name
+            // FROM subjectInfo join userInfo on subjectInfo.userId=userInfo.idx
+            // WHERE subjectInfo.idx = ? AND userInfo.idx = ? and subjectInfo.status='ACTIVE';
+            // `;
+            // const getSubParams = [sid, id];
+
+            // const [getSub] = connection.query(getSubQuery, getSubParams);
+
+            // if (getSub.length < 1) {
+            //     connection.release();
+            //     return res.json({
+            //         isSuccess: false,
+            //         code: 301,
+            //         message: "존재하지 않는 과목입니다. "
+            //     });
+            // }
 
             const deleteSubjectQuery = `
 
-                UPDATE subjectInfo
-                SET status = 'DELETED'
-                WHERE idx =? AND userId= ?;
+            UPDATE subjectInfo
+            SET status = 'DELETED' , updatedAt=current_timestamp()
+            WHERE name =? AND userId= ? AND status = 'ACTIVE';
                     `;
-            const deleteSubjectParams = [sid, id];
+            const deleteSubjectParams=[subjectName, id];
+
             await connection.query(deleteSubjectQuery, deleteSubjectParams);
 
             await connection.commit(); // COMMIT
@@ -207,7 +224,6 @@ exports.deleteSubject = async function (req, res) {
                 message: "과목이 삭제되었습니다"
             });
         } catch (err) {
-            await connection.rollback(); // ROLLBACK
             connection.release();
             logger.error(`App - Delete Subject Query error\n: ${err.message}`);
             return res.status(501).send(`Error: ${err.message}`);

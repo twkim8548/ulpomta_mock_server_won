@@ -20,4 +20,6 @@ module.exports = function(app){
     app.get('/cafe/search', jwtMiddleware, cafe.search);//제목 검색ㅇㄹ
     app.get('/cafe/user', jwtMiddleware, cafe.userBoard);//작성한 게시물 보기ㅇㄹ
     app.get('/cafe/usermark', jwtMiddleware, cafe.userMark);//북마크 목록 보기ㅇㄹ
+
+    app.get('/cafe/recomment',jwtMiddleware,cafe.getRecomment);//답글 펼치기
 };
