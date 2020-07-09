@@ -11,9 +11,6 @@ exports.getSubject = async function (req, res) {
     try {
         const connection = await pool.getConnection(async conn => conn);
         try {
-
-            await connection.beginTransaction(); // START TRANSACTION
-
             const getSubjectInfoQuery = `
 
                 SELECT idx, name
@@ -25,12 +22,7 @@ exports.getSubject = async function (req, res) {
 
             const[subjectInfoRows]= await connection.query(getSubjectInfoQuery, getSubjectInfoParams);
 
-            await connection.commit(); // COMMIT
-            connection.release();
-
-
             const stat2_1={};
-
             for(var i= 0; i<subjectInfoRows.length;i++){
                 var newId = subjectInfoRows[i].idx;
                 var newname = subjectInfoRows[i].name;
@@ -40,8 +32,6 @@ exports.getSubject = async function (req, res) {
             await connection.commit(); // COMMIT
             connection.release();
 
-    
-            
             res.json({
                 subjectInfo:stat2_1,
                 isSuccess: true,
@@ -52,11 +42,11 @@ exports.getSubject = async function (req, res) {
         } catch (err) {
             await connection.rollback(); // ROLLBACK
             connection.release();
-            logger.error(`App - Get UserInfo Query error\n: ${err.message}`);
+            logger.error(`App - Get Subject Info Query error\n: ${err.message}`);
             return res.status(501).send(`Error: ${err.message}`);
         }
     } catch (err) {
-        logger.error(`App - Update DB Connection error\n: ${err.message}`);
+        logger.error(`App - Get Subject InfoDB Connection error\n: ${err.message}`);
         return res.status(502).send(`Error: ${err.message}`);
     }
 };
@@ -151,7 +141,7 @@ exports.updateSubject = async function (req, res) {
 
             const updateSubjectQuery = `
                 UPDATE subjectInfo
-                SET name=?
+                SET name=?, updatedAt=current_timestamp()
                 where idx =? AND userId=?;
                     `;
             const updateSubjectParams = [name, sid, id];
@@ -180,32 +170,14 @@ exports.updateSubject = async function (req, res) {
 //07. 과목 삭제
 
 exports.deleteSubject = async function (req, res) {
-    const subjectName = req.query.subjectName;//삭제할 과목 id
+    const subjectName = req.query.subjectName;//삭제할 과목 이름
     const id= req.verifiedToken.id;
-
+        
+    if (subjectName.length<1) return res.json({isSuccess: false, code: 301, message: "삭제할 과목을 입력해주세요"});
+    
     try {
         const connection = await pool.getConnection(async conn => conn);
         try {
-            //과목 존재 여부 확인
-            // const getSubQuery=`
-
-            // SELECT subjectInfo.idx, subjectInfo.name
-            // FROM subjectInfo join userInfo on subjectInfo.userId=userInfo.idx
-            // WHERE subjectInfo.idx = ? AND userInfo.idx = ? and subjectInfo.status='ACTIVE';
-            // `;
-            // const getSubParams = [sid, id];
-
-            // const [getSub] = connection.query(getSubQuery, getSubParams);
-
-            // if (getSub.length < 1) {
-            //     connection.release();
-            //     return res.json({
-            //         isSuccess: false,
-            //         code: 301,
-            //         message: "존재하지 않는 과목입니다. "
-            //     });
-            // }
-
             const deleteSubjectQuery = `
 
             UPDATE subjectInfo

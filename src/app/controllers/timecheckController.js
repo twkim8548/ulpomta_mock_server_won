@@ -3,14 +3,15 @@ const {pool} = require('../../../config/database');
 const {logger} = require('../../../config/winston');
 
 const jwt = require('jsonwebtoken');
+const schedule = require('node-schedule');
 
 
 
-//14.15. 홈화면 모든 정보 조회
+
+//12. 홈화면 모든 정보 조회
 
 exports.getSubTimeCheck = async function (req, res) {
     const id= req.verifiedToken.id;
-
 
     try {
         const connection = await pool.getConnection(async conn => conn);
@@ -75,14 +76,14 @@ exports.getSubTimeCheck = async function (req, res) {
 exports.startTimeCheck = async function (req, res) {
     const id= req.verifiedToken.id;
     const sid = req.query.subjectId;
+
     
+    if (!sid) return res.json({isSuccess: false, code: 301, message: "측정할 과목을 확인해주세요."});
     
     try {
         const connection = await pool.getConnection(async conn => conn);
         try {
-            
-            await connection.beginTransaction(); // START TRANSACTION
-
+        
             const finishRestTimeQuery = `    
 
                 update timeCheck
@@ -129,8 +130,6 @@ exports.startTimeCheck2 = async function (req, res) {
     const id= req.verifiedToken.id;
     const rid = req.query.restId;
 
-    
-    
     try {
         const connection = await pool.getConnection(async conn => conn);
         try {
@@ -232,9 +231,6 @@ exports.finishTimeCheck = async function (req, res) {
             const startRestTimeParams = [id];
             await connection.query(startRestTimeQuery,startRestTimeParams);
 
-            //몇초 기록되었습니다 창 띄우기??
-
-
             await connection.commit(); // COMMIT
             connection.release();
 
@@ -261,6 +257,9 @@ exports.getTimeCheck = async function (req, res) {
     const id= req.verifiedToken.id;
     const sid= req.query.sid;
 
+    
+    if (!sid) return res.json({isSuccess: false, code: 301, message: "현재 과목이 입력되지 않았습니다"});
+    
 
     try {
         const connection = await pool.getConnection(async conn => conn);
@@ -374,6 +373,12 @@ exports.getDailyStatus = async function (req, res) {
     const year= req.query.year;
     const month= req.query.month;
     const day= req.query.day;
+
+    if (!year) return res.json({isSuccess: false, code: 301, message: "연도를 입력해주세요"});
+    if (!month) return res.json({isSuccess: false, code: 302, message: "현재 달을 입력해주세요"});
+    if (!day) return res.json({isSuccess: false, code: 303, message: "날짜를 입력해주세요"});
+
+    
 
     try {
         const connection = await pool.getConnection(async conn => conn);
@@ -504,6 +509,11 @@ exports.getDailyTime = async function (req, res) {
     const month= req.query.month;
     const day= req.query.day;
 
+    
+    if (!year) return res.json({isSuccess: false, code: 301, message: "연도를 입력해주세요"});
+    if (!month) return res.json({isSuccess: false, code: 302, message: "현재 달을 입력해주세요"});
+    if (!day) return res.json({isSuccess: false, code: 303, message: "날짜를 입력해주세요"});
+
     try {
         const connection = await pool.getConnection(async conn => conn);
         try {
@@ -554,6 +564,11 @@ exports.getWeeklyTime = async function (req, res) {
     const d= req.query.day;
     const date = y + '-' + m + '-' + d;
 
+    
+    if (!y) return res.json({isSuccess: false, code: 301, message: "연도를 입력해주세요"});
+    if (!m) return res.json({isSuccess: false, code: 302, message: "현재 달을 입력해주세요"});
+    if (!d) return res.json({isSuccess: false, code: 303, message: "날짜를 입력해주세요"});
+
     try {
         const connection = await pool.getConnection(async conn => conn);
         try {
@@ -600,6 +615,10 @@ exports.getMonthlyTime = async function (req, res) {
     const m= req.query.month;
     const d= req.query.day;
     const date = y + '-' + m + '-' + d;
+    
+    if (!y) return res.json({isSuccess: false, code: 301, message: "연도를 입력해주세요"});
+    if (!m) return res.json({isSuccess: false, code: 302, message: "현재 달을 입력해주세요"});
+    if (!d) return res.json({isSuccess: false, code: 303, message: "날짜를 입력해주세요"});
 
     try {
         const connection = await pool.getConnection(async conn => conn);

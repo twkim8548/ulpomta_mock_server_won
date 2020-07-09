@@ -5,7 +5,7 @@ module.exports = function(app){
     //main page
      app.get('/home',jwtMiddleware, time.getSubTimeCheck);//14. 홈화면
 
-     app.get('/restcheck',jwtMiddleware, time.getRestTimeCheck);
+     app.get('/restcheck',jwtMiddleware, time.getRestTimeCheck);//휴식시간 조회
      app.route('/timecheck/start').post(jwtMiddleware,time.startTimeCheck);//17. 시간 측정 시작
      app.route('/timecheck/start2').post(jwtMiddleware,time.startTimeCheck2);//17-1.휴식시간 업데이트
      app.route('/timecheck/finish').post(jwtMiddleware,time.finishTimeCheck);//18. 시간 측정 종료

@@ -101,13 +101,12 @@ exports.boardList = async function (req, res) {
             });
             
         } catch (err) {
-            await connection.rollback(); // ROLLBACK
             connection.release();
-            logger.error(`App - Get Cate Board List Query error\n: ${err.message}`);
+            logger.error(`App - Get Board List Query error\n: ${err.message}`);
             return res.status(501).send(`Error: ${err.message}`);
         }
     } catch (err) {
-        logger.error(`App - Get Cate Board List DB Connection error\n: ${err.message}`);
+        logger.error(`App - Get Board List DB Connection error\n: ${err.message}`);
         return res.status(502).send(`Error: ${err.message}`);
     }
 };
@@ -117,6 +116,8 @@ exports.boardList = async function (req, res) {
 exports.boardInfo = async function (req, res) {
     const id= req.verifiedToken.id;
     const bid= req.query.boardId;
+    
+    if (!bid) return res.json({isSuccess: false, code: 301, message: "조회할 글을 입력해주세요"});
     try {
         const connection = await pool.getConnection(async conn => conn);
         try {
@@ -196,6 +197,10 @@ exports.createBoard = async function (req, res) {
         title, content, img, tag, category
     } = req.body;
 
+    
+    if (!title) return res.json({isSuccess: false, code: 301, message: "제목을 입력해주세요"});
+    if (!content) return res.json({isSuccess: false, code: 302, message: "내용을 입력해주세요"});
+
     try {
         const connection = await pool.getConnection(async conn => conn);
         try {            
@@ -230,7 +235,8 @@ exports.deleteBoard = async function (req, res) {
     const id= req.verifiedToken.id;
     const bid= req.query.boardId;
 
-
+    if (!bid) return res.json({isSuccess: false, code: 301, message: "삭제할 글을 입력해주세요"});
+   
     try {
         const connection = await pool.getConnection(async conn => conn);
         try {
@@ -267,6 +273,8 @@ exports.deleteBoard = async function (req, res) {
 exports.likeBoard = async function (req, res) {
     const id= req.verifiedToken.id;
     const bid = req.body.boardId;
+    if (!bid) return res.json({isSuccess: false, code: 301, message: "좋아요 할 글을 입력해주세요"});
+   
 
     try {
         const connection = await pool.getConnection(async conn => conn);
@@ -302,6 +310,8 @@ exports.likeBoard = async function (req, res) {
 exports.markBoard = async function (req, res) {
     const id= req.verifiedToken.id;
     const bid = req.body.boardId;
+    
+    if (!bid) return res.json({isSuccess: false, code: 301, message: "북마크 할 글을 입력해주세요"});
 
     try {
         const connection = await pool.getConnection(async conn => conn);
@@ -339,6 +349,9 @@ exports.createComment = async function (req, res) {
     const id= req.verifiedToken.id;//회원id
     const content= req.body.content;
     const bid=req.query.boardId;
+    
+    if (!bid) return res.json({isSuccess: false, code: 301, message: "댓글 작성할 글을 입력해주세요"});
+    if (!content) return res.json({isSuccess: false, code: 302, message: "내용을 입력해주세요"});
 
     try {
         const connection = await pool.getConnection(async conn => conn);
@@ -375,6 +388,8 @@ exports.createComment = async function (req, res) {
 exports.deleteComment = async function (req, res) {
     const id= req.verifiedToken.id;
     const cid= req.params.commentId;
+    
+    if (!cid) return res.json({isSuccess: false, code: 301, message: "삭제할 댓글을 입력해주세요"});
 
     try {
         const connection = await pool.getConnection(async conn => conn);
@@ -410,6 +425,8 @@ exports.deleteComment = async function (req, res) {
 exports.likeComment = async function (req, res) {
     const id= req.verifiedToken.id;
     const cid = req.body.commentId;
+    
+    if (!cid) return res.json({isSuccess: false, code: 301, message: "좋아요할 댓글을 입력해주세요"});
 
     try {
         const connection = await pool.getConnection(async conn => conn);
@@ -448,6 +465,10 @@ exports.createRecomment = async function (req, res) {
     const cid=req.body.commentId;
     const bid=req.body.boardId;
 
+    
+    if (!cid) return res.json({isSuccess: false, code: 301, message: "답글 달 댓글을 입력해주세요"});
+    if (!content) return res.json({isSuccess: false, code: 302, message: "내용을 입력해주세요"});
+
     try {
         const connection = await pool.getConnection(async conn => conn);
         try {            
@@ -485,6 +506,8 @@ exports.search = async function (req, res) {
 
     const id= req.verifiedToken.id;
     const word = req.query.word;
+    
+    if (word.length<2) return res.json({isSuccess: false, code: 301, message: "검색어는 2자 이상 입력해주세요"});
 
     try {
         const connection = await pool.getConnection(async conn => conn);
@@ -617,13 +640,15 @@ exports.userMark = async function (req, res) {
 exports.getRecomment = async function (req, res) {
     const cid=req.body.commentId;
 
+    if (!cid) return res.json({isSuccess: false, code: 301, message: "조회할 댓글을 선택해주세요"});
+
     try {
         const connection = await pool.getConnection(async conn => conn);
         try {            
 
             const getRecommentQuery = `
                 
-            select c2.userId, c2.content,
+            select c1.idx , c2.userId, c2.content,
 		        (CASE
                 WHEN TIMESTAMPDIFF(SECOND, c2.createdAt, CURRENT_TIMESTAMP) < 60
                 then CONCAT(TIMESTAMPDIFF(SECOND, c2.createdAt, CURRENT_TIMESTAMP), ' 초전')
@@ -634,7 +659,7 @@ exports.getRecomment = async function (req, res) {
                 else CONCAT(TIMESTAMPDIFF(DAY, c2.createdAt, CURRENT_TIMESTAMP), ' 일 전')
                 END )AS CreatedAt
             from comment c1 left join comment c2 on c1.idx=c2.commentId
-            where c1.idx=? and c1.status='ACTIVE' and c2.status='ACTIVE"
+            where c1.idx=? and c1.status='ACTIVE' and c2.status='ACTIVE'
                     `;
             const getRecommentParams = [cid];
             const recomment =await connection.query(getRecommentQuery, getRecommentParams);
@@ -650,11 +675,11 @@ exports.getRecomment = async function (req, res) {
             });
         } catch (err) {
             connection.release();
-            logger.error(`App - Insert Recomment Query error\n: ${err.message}`);
+            logger.error(`App - Select Recomment Query error\n: ${err.message}`);
             return res.status(501).send(`Error: ${err.message}`);
         }
     } catch (err) {
-        logger.error(`App - Insert Recomment Connection error\n: ${err.message}`);
+        logger.error(`App - Select Recomment DB Connection error\n: ${err.message}`);
         return res.status(502).send(`Error: ${err.message}`);
     }
 };
